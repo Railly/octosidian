@@ -1,0 +1,20 @@
+{
+	"name": "octosidian",
+	"version": "0.1.0",
+	"description": "GitHub dashboard for Obsidian",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"builtin-modules": "^4.0.0",
+		"esbuild": "^0.25.0",
+		"obsidian": "latest",
+		"typescript": "^5.7.0"
+	},
+	"dependencies": {
+		"octokit": "^4.1.0"
+	}
+}

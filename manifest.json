@@ -1,0 +1,10 @@
+{
+	"id": "octosidian",
+	"name": "Octosidian",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "A design-first GitHub dashboard for pull requests, issues, and code reviews — inside Obsidian.",
+	"author": "Railly Hugo",
+	"authorUrl": "https://railly.dev",
+	"isDesktopOnly": true
+}
