@@ -9,7 +9,7 @@ export function Install() {
 						Install in 30 seconds.
 					</h2>
 					<p className="text-white/60">
-						Manual install while we wait for community plugin approval.
+						Manual install for now. Community plugin submission pending review.
 					</p>
 				</div>
 
@@ -19,36 +19,43 @@ export function Install() {
 					</div>
 					<div className="p-6 space-y-4">
 						<Step number={1}>
-							<p>
-								Clone the repo into your vault's plugins folder:
-							</p>
+							<p>Clone into your vault&apos;s plugins folder:</p>
 							<CodeBlock>
 								{`cd /path/to/your/vault/.obsidian/plugins\ngit clone https://github.com/Railly/octosidian.git\ncd octosidian/plugin && bun install && bun run build`}
 							</CodeBlock>
 						</Step>
 						<Step number={2}>
 							<p>
-								Open Obsidian → Settings → Community plugins → Enable "Octosidian"
+								Open Obsidian, go to Settings, Community plugins, and enable
+								Octosidian.
 							</p>
 						</Step>
 						<Step number={3}>
 							<p>
-								Generate a{" "}
+								Create a{" "}
 								<a
 									href="https://github.com/settings/tokens/new?scopes=repo,notifications"
 									target="_blank"
 									rel="noopener noreferrer"
 									className="text-[#a855f7] hover:underline"
 								>
-									GitHub Personal Access Token
+									GitHub personal access token
 								</a>{" "}
-								with <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded">repo</code> +{" "}
-								<code className="text-xs bg-white/10 px-1.5 py-0.5 rounded">notifications</code> scopes
+								with{" "}
+								<code className="text-xs bg-white/10 px-1.5 py-0.5 rounded">
+									repo
+								</code>{" "}
+								and{" "}
+								<code className="text-xs bg-white/10 px-1.5 py-0.5 rounded">
+									notifications
+								</code>{" "}
+								scopes.
 							</p>
 						</Step>
 						<Step number={4}>
 							<p>
-								Paste the token into Settings → Octosidian. Click the git-pull-request icon in the ribbon.
+								Paste the token into Settings, Octosidian. Click the
+								git-pull-request icon in the ribbon and you are in.
 							</p>
 						</Step>
 					</div>
@@ -78,13 +85,21 @@ export function Install() {
 	);
 }
 
-function Step({ number, children }: { number: number; children: React.ReactNode }) {
+function Step({
+	number,
+	children,
+}: {
+	number: number;
+	children: React.ReactNode;
+}) {
 	return (
 		<div className="flex gap-4">
-			<div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#ec4899] text-white text-xs font-semibold flex items-center justify-center">
+			<div className="flex-shrink-0 h-7 w-7 rounded-full bg-[#7c3aed] text-white text-xs font-semibold flex items-center justify-center">
 				{number}
 			</div>
-			<div className="flex-1 space-y-2 pt-0.5 text-sm text-white/80">{children}</div>
+			<div className="flex-1 space-y-2 pt-0.5 text-sm text-white/80">
+				{children}
+			</div>
 		</div>
 	);
 }

@@ -16,7 +16,7 @@ export function Footer() {
 							Railly Hugo
 						</a>
 					</span>
-					<span>·</span>
+					<span>&middot;</span>
 					<span>MIT License</span>
 				</div>
 
@@ -60,6 +60,7 @@ export function Footer() {
 				>
 					@stylesshDev
 				</a>
+				. Go star it too.
 			</div>
 		</footer>
 	);

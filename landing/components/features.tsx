@@ -12,50 +12,51 @@ const features = [
 		icon: PullRequestIcon,
 		title: "Pull Requests",
 		description:
-			"All your PRs grouped by role: review requested, authored, assigned, mentioned. Sort, filter, and preview inline.",
+			"Everything grouped the way you actually work. Review requested, authored, assigned, mentioned. Sort, filter, preview without leaving the list.",
 	},
 	{
 		icon: IssueIcon,
 		title: "Issues",
 		description:
-			"Triage open issues across your repos. Filter by label, author, or state. Read full markdown body with rendered formatting.",
+			"Triage across repos. Filter by label, state, or author. Read the full markdown body the same way Obsidian renders notes.",
 	},
 	{
 		icon: InboxIcon,
 		title: "Inbox",
 		description:
-			"GitHub notifications as a first-class view. Mark as read, archive, and stay focused on what needs attention.",
+			"GitHub notifications as a first-class view. Mark read, archive, focus on what actually needs you. Zero inbox without opening another tab.",
 	},
 	{
 		icon: ReviewIcon,
 		title: "Code Reviews",
 		description:
-			"Pending review requests at a glance. See PR details with stats, reviewers, and CI status checks.",
+			"Pending review requests at a glance. Open any PR to see stats, labels, reviewers, and CI checks. Comment inline and merge when ready.",
 	},
 	{
 		icon: FileTreeIcon,
 		title: "Repo Browser",
 		description:
-			"Navigate any repo's file tree inside Obsidian. View README, browse files, and read source with syntax highlighting.",
+			"Click any repo name from a PR or issue. File tree on the left, README or source on the right. Syntax highlighting follows your Obsidian theme.",
 	},
 	{
 		icon: CommandIcon,
 		title: "Command Palette",
 		description:
-			"Cmd+K to search GitHub globally. Navigate between tabs with G+P, G+I, G+R shortcuts. Never touch the mouse.",
+			"Cmd+K to jump anywhere. Search GitHub globally, navigate tabs with g-p, g-i, g-r. Built for keyboard-first workflows.",
 	},
 ];
 
 export function Features() {
 	return (
-		<section id="features" className="py-24 relative">
+		<section id="features" className="py-24 relative border-t border-white/10">
 			<div className="mx-auto max-w-6xl px-6">
 				<div className="max-w-2xl mb-16">
 					<h2 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-4">
-						Everything you need to review code without leaving your vault.
+						Six views. One place. Zero server.
 					</h2>
 					<p className="text-white/60 text-lg">
-						Six focused views. Native Obsidian UI. Zero server dependencies.
+						Native Obsidian components. Reads your GitHub via a personal access
+						token. Nothing runs in the cloud.
 					</p>
 				</div>
 
@@ -65,7 +66,7 @@ export function Features() {
 							key={feature.title}
 							className="group relative rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.04] hover:border-white/20 transition"
 						>
-							<div className="h-10 w-10 rounded-lg bg-gradient-to-br from-[#7c3aed]/20 to-[#ec4899]/20 border border-white/10 flex items-center justify-center mb-4 text-[#a855f7]">
+							<div className="h-10 w-10 rounded-lg border border-white/10 bg-white/[0.04] flex items-center justify-center mb-4 text-[#a855f7]">
 								<feature.icon className="h-5 w-5" />
 							</div>
 							<h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
