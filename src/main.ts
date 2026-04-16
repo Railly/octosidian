@@ -6,6 +6,7 @@ import {
 } from "./settings";
 import { initClient, destroyClient } from "./github/client";
 import { OCTO_VIEW_TYPE, OctosidianView } from "./views/sidebar";
+import { OctoCommandPalette } from "./views/command-palette";
 import { emptyCacheData, type CachedData } from "./cache";
 
 interface PluginData {
@@ -27,6 +28,34 @@ export default class OctosidianPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new OctosidianSettingTab(this.app, this));
+
+		this.addCommand({
+			id: "open-command-palette",
+			name: "Open GitHub search (Cmd+K)",
+			hotkeys: [{ modifiers: ["Mod"], key: "k" }],
+			callback: () => { new OctoCommandPalette(this.app).open(); },
+		});
+
+		this.addCommand({
+			id: "go-to-overview",
+			name: "Go to Overview",
+			callback: () => this.navigateTo("overview"),
+		});
+		this.addCommand({
+			id: "go-to-pulls",
+			name: "Go to Pull Requests",
+			callback: () => this.navigateTo("pulls"),
+		});
+		this.addCommand({
+			id: "go-to-issues",
+			name: "Go to Issues",
+			callback: () => this.navigateTo("issues"),
+		});
+		this.addCommand({
+			id: "go-to-reviews",
+			name: "Go to Reviews",
+			callback: () => this.navigateTo("reviews"),
+		});
 
 		if (this.settings.token) {
 			initClient(this.settings.token);
@@ -73,5 +102,15 @@ export default class OctosidianPlugin extends Plugin {
 
 	async saveCache() {
 		await this.saveData({ settings: this.settings, cache: this.cache });
+	}
+
+	async navigateTo(tab: "overview" | "pulls" | "issues" | "reviews") {
+		await this.activateView();
+		const leaves = this.app.workspace.getLeavesOfType(OCTO_VIEW_TYPE);
+		if (leaves.length > 0) {
+			const view = leaves[0].view as OctosidianView;
+			view.activeTab = tab;
+			view.render();
+		}
 	}
 }

@@ -323,6 +323,75 @@ export async function getIssuePageData(
 	return { detail, comments, events };
 }
 
+export async function createComment(owner: string, repo: string, issueNumber: number, body: string): Promise<void> {
+	const client = requireClient();
+	await client.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body });
+}
+
+export async function updatePullState(owner: string, repo: string, pullNumber: number, state: "open" | "closed"): Promise<void> {
+	const client = requireClient();
+	await client.rest.pulls.update({ owner, repo, pull_number: pullNumber, state });
+}
+
+export async function updateIssueState(owner: string, repo: string, issueNumber: number, state: "open" | "closed"): Promise<void> {
+	const client = requireClient();
+	await client.rest.issues.update({ owner, repo, issue_number: issueNumber, state });
+}
+
+export async function mergePullRequest(owner: string, repo: string, pullNumber: number, method: "merge" | "squash" | "rebase"): Promise<void> {
+	const client = requireClient();
+	await client.rest.pulls.merge({ owner, repo, pull_number: pullNumber, merge_method: method });
+}
+
+export type CheckRun = {
+	name: string;
+	status: string;
+	conclusion: string | null;
+	appAvatarUrl: string | null;
+};
+
+export async function getPullChecks(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.checks.listForRef({ owner, repo, ref, per_page: 50 });
+		return data.check_runs.map((r: any) => ({
+			name: r.name,
+			status: r.status,
+			conclusion: r.conclusion ?? null,
+			appAvatarUrl: r.app?.owner?.avatar_url ?? null,
+		}));
+	} catch {
+		return [];
+	}
+}
+
+export async function markNotificationRead(threadId: string): Promise<void> {
+	const client = requireClient();
+	await client.rest.activity.markThreadAsRead({ thread_id: Number(threadId) });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+	const client = requireClient();
+	await client.rest.activity.markNotificationsAsRead();
+}
+
+export async function searchIssuesAndPRs(query: string): Promise<Array<{ number: number; title: string; state: string; html_url: string; pull_request?: unknown; repository_url: string }>> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.search.issuesAndPullRequests({ q: query, per_page: 10 });
+		return data.items.map((item: any) => ({
+			number: item.number,
+			title: item.title,
+			state: item.state,
+			html_url: item.html_url,
+			pull_request: item.pull_request,
+			repository_url: item.repository_url,
+		}));
+	} catch {
+		return [];
+	}
+}
+
 export async function getNotifications(all = false): Promise<GitHubNotification[]> {
 	const client = requireClient();
 	try {
