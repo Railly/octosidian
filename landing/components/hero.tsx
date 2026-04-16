@@ -1,11 +1,22 @@
+import Image from "next/image";
 import { GitHubIcon } from "./icons";
 
 export function Hero() {
 	return (
 		<section className="relative overflow-hidden">
 			<div className="absolute inset-0 bg-gradient-to-b from-[#7c3aed]/10 via-transparent to-transparent pointer-events-none" />
-			<div className="relative mx-auto max-w-6xl px-6 pt-24 pb-16 sm:pt-32 sm:pb-24">
+			<div className="relative mx-auto max-w-6xl px-6 pt-20 pb-16 sm:pt-24 sm:pb-24">
 				<div className="mx-auto max-w-3xl text-center">
+					<div className="flex justify-center mb-8">
+						<Image
+							src="/brand/logo.png"
+							alt="Octosidian"
+							width={140}
+							height={140}
+							priority
+							className="drop-shadow-[0_0_40px_rgba(168,85,247,0.35)]"
+						/>
+					</div>
 					<div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 mb-6">
 						<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
 						Beta — v0.1.0

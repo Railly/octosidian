@@ -1,4 +1,5 @@
-import { GitHubIcon, ObsidianIcon } from "@/components/icons";
+import Image from "next/image";
+import { GitHubIcon } from "@/components/icons";
 import { Hero } from "@/components/hero";
 import { Features } from "@/components/features";
 import { Install } from "@/components/install";
@@ -10,7 +11,13 @@ export default function Home() {
 			<nav className="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md">
 				<div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<ObsidianIcon className="h-5 w-5 text-[#7c3aed]" />
+						<Image
+							src="/brand/logo.png"
+							alt="Octosidian"
+							width={28}
+							height={28}
+							priority
+						/>
 						<span className="font-semibold">Octosidian</span>
 					</div>
 					<div className="flex items-center gap-4 text-sm">
