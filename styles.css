@@ -1564,33 +1564,24 @@
 	line-height: 1.5;
 }
 
-.octo-code-table {
-	width: 100%;
-	border-collapse: collapse;
+.octo-file-viewer-body pre {
+	margin: 0 !important;
+	padding: 12px 16px !important;
+	border-radius: 0 !important;
+	background: var(--code-background, var(--background-primary)) !important;
+	border: none !important;
+	overflow-x: auto;
+}
+
+.octo-file-viewer-body pre code {
 	font-family: var(--font-monospace);
 	font-size: 12px;
 	line-height: 1.6;
 }
 
-.octo-code-ln {
-	padding: 0 12px;
-	text-align: right;
-	color: var(--text-faint);
-	user-select: none;
-	white-space: nowrap;
-	width: 1%;
-	border-right: 1px solid var(--background-modifier-border);
-	vertical-align: top;
-}
-
-.octo-code-line {
-	padding: 0 16px;
-	white-space: pre;
-	color: var(--text-normal);
-}
-
-.octo-code-table tr:hover {
-	background: var(--background-secondary);
+.octo-file-viewer-body .copy-code-button {
+	top: 8px !important;
+	right: 8px !important;
 }
 
 /* --- Markdown rendering fixes --- */
@@ -1633,4 +1624,103 @@
 
 .octo-file-viewer-body .markdown-rendered {
 	padding: 16px;
+}
+
+/* --- Repo Browser Layout (GitHub-style: file tree + content) --- */
+
+.octo-repo-browser-grid {
+	display: grid;
+	grid-template-columns: 280px minmax(0, 1fr);
+	gap: 16px;
+	margin-top: 16px;
+	min-height: calc(100vh - 120px);
+}
+
+.octo-repo-tree-side {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--background-secondary);
+	height: fit-content;
+	max-height: calc(100vh - 120px);
+	overflow-y: auto;
+	position: sticky;
+	top: 64px;
+}
+
+.octo-tree-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary-alt, var(--background-secondary));
+}
+
+.octo-tree-header-title {
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.octo-tree-home {
+	font-size: 11px;
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.octo-tree-home:hover {
+	text-decoration: underline;
+}
+
+.octo-file-list {
+	padding: 4px;
+}
+
+.octo-file-list .octo-file-row {
+	padding: 5px 8px;
+	border-bottom: none;
+	border-radius: 4px;
+	font-size: 12px;
+}
+
+.octo-file-list .octo-file-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.octo-file-active {
+	background: var(--interactive-accent) !important;
+	color: var(--text-on-accent) !important;
+}
+
+.octo-file-active .octo-file-name,
+.octo-file-active .octo-file-icon {
+	color: var(--text-on-accent) !important;
+}
+
+.octo-file-up {
+	font-size: 12px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.octo-repo-content-side {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+/* --- Readme body padding fix --- */
+
+.octo-readme-body {
+	padding: 20px 24px !important;
+}
+
+.octo-readme-body > :first-child {
+	margin-top: 0 !important;
+}
+
+.octo-readme-body h1:first-child,
+.octo-readme-body h2:first-child {
+	margin-top: 0 !important;
 }

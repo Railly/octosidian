@@ -36,6 +36,22 @@ interface RepoViewState {
 	filePath: string | null;
 }
 
+const LANG_MAP: Record<string, string> = {
+	ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
+	py: "python", rb: "ruby", go: "go", rs: "rust", java: "java", kt: "kotlin", swift: "swift",
+	c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp",
+	cs: "csharp", php: "php", sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
+	yml: "yaml", yaml: "yaml", toml: "toml", json: "json", xml: "xml", html: "html",
+	css: "css", scss: "scss", sass: "sass", less: "less",
+	sql: "sql", graphql: "graphql", gql: "graphql",
+	dockerfile: "dockerfile", makefile: "makefile",
+	lock: "json", gitignore: "bash",
+};
+
+function getLangFromExt(ext: string): string {
+	return LANG_MAP[ext] ?? ext ?? "";
+}
+
 export class OctosidianView extends ItemView {
 	plugin: OctosidianPlugin;
 	pullsData: MyPullsResult | null = null;
@@ -183,7 +199,7 @@ export class OctosidianView extends ItemView {
 	async navigateRepoTree(path: string) {
 		if (!this.repoView) return;
 		const { owner, repo } = this.repoView;
-		this.repoView = { ...this.repoView, tree: null, treePath: path, loading: true };
+		this.repoView = { ...this.repoView, tree: null, treePath: path, loading: true, fileContent: null, filePath: null };
 		this.render();
 		try {
 			const tree = await getRepoTree(owner, repo, path);
@@ -1091,20 +1107,67 @@ export class OctosidianView extends ItemView {
 		openGh.createSpan({ text: "Open in GitHub" });
 		openGh.addEventListener("click", () => window.open(`https://github.com/${rv.owner}/${rv.repo}`, "_blank"));
 
-		if (rv.loading) {
+		if (rv.loading && !rv.tree) {
 			this.renderLoading(wrapper);
 			return;
 		}
 
-		const grid = wrapper.createDiv({ cls: "octo-repo-grid" });
+		const isBrowsing = rv.treePath !== "" || rv.filePath !== null;
 
-		const mainCol = grid.createDiv({ cls: "octo-repo-main" });
+		if (isBrowsing) {
+			this.renderRepoBrowserLayout(wrapper, rv);
+		} else {
+			this.renderRepoLandingLayout(wrapper, rv);
+		}
+	}
+
+	renderRepoBrowserLayout(wrapper: HTMLElement, rv: RepoViewState) {
+		const grid = wrapper.createDiv({ cls: "octo-repo-browser-grid" });
+
+		// LEFT: File tree sidebar
+		const treeSide = grid.createDiv({ cls: "octo-repo-tree-side" });
+		const treeHeader = treeSide.createDiv({ cls: "octo-tree-header" });
+		treeHeader.createSpan({ cls: "octo-tree-header-title", text: "Files" });
 
 		if (rv.treePath) {
-			const breadcrumb = mainCol.createDiv({ cls: "octo-repo-breadcrumb" });
-			const rootLink = breadcrumb.createSpan({ cls: "octo-repo-link", text: rv.repo });
-			rootLink.addEventListener("click", () => this.navigateRepoTree(""));
-			const parts = rv.treePath.split("/");
+			const homeBtn = treeHeader.createSpan({ cls: "octo-tree-home", text: "← Root" });
+			homeBtn.addEventListener("click", () => this.navigateRepoTree(""));
+		}
+
+		if (rv.tree && rv.tree.length > 0) {
+			const list = treeSide.createDiv({ cls: "octo-file-list" });
+			if (rv.treePath) {
+				const upRow = list.createDiv({ cls: "octo-file-row octo-file-up" });
+				upRow.createSpan({ text: "../" });
+				upRow.addEventListener("click", () => {
+					const parent = rv.treePath.split("/").slice(0, -1).join("/");
+					this.navigateRepoTree(parent);
+				});
+			}
+			for (const item of rv.tree) {
+				const fileRow = list.createDiv({ cls: `octo-file-row ${rv.filePath === item.path ? "octo-file-active" : ""}` });
+				const icon = fileRow.createSpan({ cls: "octo-file-icon" });
+				icon.innerHTML = item.type === "dir"
+					? `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"></path></svg>`
+					: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"></path></svg>`;
+				fileRow.createSpan({ cls: `octo-file-name ${item.type === "dir" ? "octo-file-dir" : ""}`, text: item.name });
+				if (item.type === "dir") {
+					fileRow.addEventListener("click", () => this.navigateRepoTree(item.path));
+				} else {
+					fileRow.addEventListener("click", () => this.openFileView(item.path, item.name));
+				}
+			}
+		}
+
+		// RIGHT: Main content
+		const mainSide = grid.createDiv({ cls: "octo-repo-content-side" });
+
+		const breadcrumb = mainSide.createDiv({ cls: "octo-repo-breadcrumb" });
+		const rootLink = breadcrumb.createSpan({ cls: "octo-repo-link", text: rv.repo });
+		rootLink.addEventListener("click", () => this.navigateRepoTree(""));
+		const breadcrumbPath = rv.filePath ?? rv.treePath;
+		if (breadcrumbPath) {
+			const parts = breadcrumbPath.split("/");
 			for (let i = 0; i < parts.length; i++) {
 				breadcrumb.createSpan({ text: " / " });
 				const partPath = parts.slice(0, i + 1).join("/");
@@ -1112,10 +1175,23 @@ export class OctosidianView extends ItemView {
 					const link = breadcrumb.createSpan({ cls: "octo-repo-link", text: parts[i] });
 					link.addEventListener("click", () => this.navigateRepoTree(partPath));
 				} else {
-					breadcrumb.createSpan({ text: parts[i] });
+					breadcrumb.createSpan({ cls: "octo-repo-name-bold", text: parts[i] });
 				}
 			}
 		}
+
+		if (rv.loading) {
+			mainSide.createDiv({ cls: "octo-empty-state", text: "Loading..." });
+		} else if (rv.fileContent !== null && rv.filePath) {
+			this.renderFileContent(mainSide, rv.filePath, rv.fileContent);
+		} else {
+			mainSide.createDiv({ cls: "octo-empty-state", text: "Select a file to view" });
+		}
+	}
+
+	renderRepoLandingLayout(wrapper: HTMLElement, rv: RepoViewState) {
+		const grid = wrapper.createDiv({ cls: "octo-repo-grid" });
+		const mainCol = grid.createDiv({ cls: "octo-repo-main" });
 
 		if (rv.tree && rv.tree.length > 0) {
 			const fileTable = mainCol.createDiv({ cls: "octo-file-tree" });
@@ -1125,7 +1201,7 @@ export class OctosidianView extends ItemView {
 				icon.innerHTML = item.type === "dir"
 					? `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"></path></svg>`
 					: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"></path></svg>`;
-				const nameEl = fileRow.createSpan({ cls: `octo-file-name ${item.type === "dir" ? "octo-file-dir" : ""}`, text: item.name });
+				fileRow.createSpan({ cls: `octo-file-name ${item.type === "dir" ? "octo-file-dir" : ""}`, text: item.name });
 				if (item.type === "dir") {
 					fileRow.addEventListener("click", () => this.navigateRepoTree(item.path));
 				} else {
@@ -1135,12 +1211,10 @@ export class OctosidianView extends ItemView {
 			}
 		}
 
-		if (rv.fileContent !== null && rv.filePath) {
-			this.renderFileContent(mainCol, rv.filePath, rv.fileContent);
-		} else if (rv.readme && !rv.treePath) {
+		if (rv.readme) {
 			const readmeSection = mainCol.createDiv({ cls: "octo-repo-readme" });
 			readmeSection.createDiv({ cls: "octo-repo-readme-header", text: "README.md" });
-			const readmeBody = readmeSection.createDiv({ cls: "octo-detail-body" });
+			const readmeBody = readmeSection.createDiv({ cls: "octo-detail-body octo-readme-body" });
 			MarkdownRenderer.render(this.app, rv.readme, readmeBody, "", this);
 		}
 
@@ -1150,7 +1224,6 @@ export class OctosidianView extends ItemView {
 			const about = sideCol.createDiv({ cls: "octo-repo-about" });
 			about.createDiv({ cls: "octo-repo-section-title", text: "About" });
 			if (rv.overview.description) about.createDiv({ cls: "octo-repo-desc", text: rv.overview.description });
-
 			const stats = about.createDiv({ cls: "octo-repo-stats" });
 			stats.createSpan({ cls: "octo-repo-stat", text: `${rv.overview.stars} Stars` });
 			stats.createSpan({ cls: "octo-repo-stat", text: `${rv.overview.forks} Forks` });
@@ -1188,9 +1261,6 @@ export class OctosidianView extends ItemView {
 		const container = parent.createDiv({ cls: "octo-file-viewer" });
 
 		const header = container.createDiv({ cls: "octo-file-viewer-header" });
-		const backBtn = header.createSpan({ cls: "octo-file-viewer-back" });
-		backBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
-		backBtn.addEventListener("click", () => this.closeFileView());
 		header.createSpan({ cls: "octo-file-viewer-path", text: filePath });
 
 		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
@@ -1200,13 +1270,9 @@ export class OctosidianView extends ItemView {
 		if (mdExtensions.includes(ext)) {
 			MarkdownRenderer.render(this.app, content, codeBody, "", this);
 		} else {
-			const lines = content.split("\n");
-			const table = codeBody.createEl("table", { cls: "octo-code-table" });
-			for (let i = 0; i < lines.length; i++) {
-				const tr = table.createEl("tr");
-				tr.createEl("td", { cls: "octo-code-ln", text: String(i + 1) });
-				tr.createEl("td", { cls: "octo-code-line", text: lines[i] || " " });
-			}
+			const lang = getLangFromExt(ext);
+			const fenced = "```" + lang + "\n" + content + "\n```";
+			MarkdownRenderer.render(this.app, fenced, codeBody, "", this);
 		}
 	}
 
