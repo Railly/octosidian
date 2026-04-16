@@ -1,4 +1,8 @@
 node_modules/
-main.js
+plugin/main.js
+landing/.next/
+landing/out/
+landing/.vercel
 *.map
 .DS_Store
+.env*.local

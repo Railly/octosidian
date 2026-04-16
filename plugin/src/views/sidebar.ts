@@ -1265,9 +1265,12 @@ export class OctosidianView extends ItemView {
 
 		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 		const mdExtensions = ["md", "mdx", "markdown"];
-		const codeBody = container.createDiv({ cls: "octo-file-viewer-body" });
+		const isMarkdown = mdExtensions.includes(ext);
+		const codeBody = container.createDiv({
+			cls: `octo-file-viewer-body ${isMarkdown ? "octo-file-viewer-md" : "octo-file-viewer-code"}`,
+		});
 
-		if (mdExtensions.includes(ext)) {
+		if (isMarkdown) {
 			MarkdownRenderer.render(this.app, content, codeBody, "", this);
 		} else {
 			const lang = getLangFromExt(ext);
