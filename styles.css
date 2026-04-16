@@ -1344,3 +1344,180 @@
 	font-size: 11px;
 	color: var(--text-muted);
 }
+
+/* --- Body wrapper (below sticky topnav) --- */
+
+.octo-body {
+	overflow-y: auto;
+	flex: 1;
+}
+
+/* --- Repo link (clickable repo name in rows) --- */
+
+.octo-repo-link {
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.octo-repo-link:hover {
+	text-decoration: underline;
+}
+
+/* --- Repo View --- */
+
+.octo-repo {
+	max-width: 1200px;
+	margin: 0 auto;
+	padding: 0 24px;
+}
+
+.octo-repo-header-name {
+	font-size: 14px;
+	color: var(--text-muted);
+}
+
+.octo-repo-owner { color: var(--text-accent); }
+.octo-repo-name-bold { font-weight: 600; color: var(--text-normal); }
+
+.octo-repo-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 280px;
+	gap: 32px;
+	margin-top: 16px;
+}
+
+.octo-repo-main {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.octo-repo-breadcrumb {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+/* --- File Tree --- */
+
+.octo-file-tree {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.octo-file-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: 13px;
+	cursor: default;
+}
+
+.octo-file-row:last-child { border-bottom: none; }
+
+.octo-file-row:hover {
+	background: var(--background-secondary);
+}
+
+.octo-file-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.octo-file-icon svg { width: 16px; height: 16px; }
+
+.octo-file-name { color: var(--text-normal); }
+.octo-file-dir { color: var(--text-accent); cursor: pointer; font-weight: 500; }
+
+/* --- Repo README --- */
+
+.octo-repo-readme {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.octo-repo-readme-header {
+	padding: 8px 12px;
+	background: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+/* --- Repo Side Column --- */
+
+.octo-repo-side {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
+.octo-repo-about {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.octo-repo-section-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.octo-repo-desc {
+	font-size: 13px;
+	color: var(--text-normal);
+	line-height: 1.5;
+}
+
+.octo-repo-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.octo-repo-stat {
+	font-size: 12px;
+	color: var(--text-muted);
+	background: var(--background-secondary);
+	padding: 2px 8px;
+	border-radius: 6px;
+}
+
+.octo-repo-sidebar-section {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.octo-repo-sidebar-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 12px;
+	transition: background 100ms;
+}
+
+.octo-repo-sidebar-row:hover {
+	background: var(--background-secondary);
+}
+
+.octo-repo-sidebar-row svg { width: 14px; height: 14px; }
+
+.octo-repo-sidebar-title {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--text-normal);
+}
