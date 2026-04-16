@@ -329,6 +329,8 @@ export class OctosidianView extends ItemView {
 				this.activeTab = tab.id;
 				this.activeRole = "all";
 				this.searchQuery = "";
+				this.detail = null;
+				this.repoView = null;
 				this.render();
 			});
 		}
