@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -32,6 +32,8 @@ interface RepoViewState {
 	recentIssues: IssueSummary[];
 	loading: boolean;
 	treePath: string;
+	fileContent: string | null;
+	filePath: string | null;
 }
 
 export class OctosidianView extends ItemView {
@@ -156,7 +158,7 @@ export class OctosidianView extends ItemView {
 	}
 
 	async openRepoView(owner: string, repo: string) {
-		this.repoView = { owner, repo, tree: null, readme: null, overview: null, recentPrs: [], recentIssues: [], loading: true, treePath: "" };
+		this.repoView = { owner, repo, tree: null, readme: null, overview: null, recentPrs: [], recentIssues: [], loading: true, treePath: "", fileContent: null, filePath: null };
 		this.detail = null;
 		this.render();
 		try {
@@ -193,6 +195,24 @@ export class OctosidianView extends ItemView {
 			this.repoView = { ...this.repoView, tree: [], loading: false };
 			this.render();
 		}
+	}
+
+	async openFileView(path: string, name: string) {
+		if (!this.repoView) return;
+		const { owner, repo } = this.repoView;
+		this.repoView = { ...this.repoView, fileContent: null, filePath: path, loading: true };
+		this.render();
+		const result = await getFileContent(owner, repo, path);
+		if (this.repoView?.filePath === path) {
+			this.repoView = { ...this.repoView, fileContent: result?.content ?? "Could not load file.", loading: false };
+			this.render();
+		}
+	}
+
+	closeFileView() {
+		if (!this.repoView) return;
+		this.repoView = { ...this.repoView, fileContent: null, filePath: null };
+		this.render();
 	}
 
 	closeRepoView() {
@@ -1108,11 +1128,16 @@ export class OctosidianView extends ItemView {
 				const nameEl = fileRow.createSpan({ cls: `octo-file-name ${item.type === "dir" ? "octo-file-dir" : ""}`, text: item.name });
 				if (item.type === "dir") {
 					fileRow.addEventListener("click", () => this.navigateRepoTree(item.path));
+				} else {
+					fileRow.style.cursor = "pointer";
+					fileRow.addEventListener("click", () => this.openFileView(item.path, item.name));
 				}
 			}
 		}
 
-		if (rv.readme && !rv.treePath) {
+		if (rv.fileContent !== null && rv.filePath) {
+			this.renderFileContent(mainCol, rv.filePath, rv.fileContent);
+		} else if (rv.readme && !rv.treePath) {
 			const readmeSection = mainCol.createDiv({ cls: "octo-repo-readme" });
 			readmeSection.createDiv({ cls: "octo-repo-readme-header", text: "README.md" });
 			const readmeBody = readmeSection.createDiv({ cls: "octo-detail-body" });
@@ -1155,6 +1180,32 @@ export class OctosidianView extends ItemView {
 				iconEl.innerHTML = ICONS.issueOpen;
 				row.createSpan({ cls: "octo-repo-sidebar-title", text: issue.title });
 				row.addEventListener("click", () => this.openIssueDetail(rv.owner, rv.repo, issue.number));
+			}
+		}
+	}
+
+	renderFileContent(parent: HTMLElement, filePath: string, content: string) {
+		const container = parent.createDiv({ cls: "octo-file-viewer" });
+
+		const header = container.createDiv({ cls: "octo-file-viewer-header" });
+		const backBtn = header.createSpan({ cls: "octo-file-viewer-back" });
+		backBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
+		backBtn.addEventListener("click", () => this.closeFileView());
+		header.createSpan({ cls: "octo-file-viewer-path", text: filePath });
+
+		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+		const mdExtensions = ["md", "mdx", "markdown"];
+		const codeBody = container.createDiv({ cls: "octo-file-viewer-body" });
+
+		if (mdExtensions.includes(ext)) {
+			MarkdownRenderer.render(this.app, content, codeBody, "", this);
+		} else {
+			const lines = content.split("\n");
+			const table = codeBody.createEl("table", { cls: "octo-code-table" });
+			for (let i = 0; i < lines.length; i++) {
+				const tr = table.createEl("tr");
+				tr.createEl("td", { cls: "octo-code-ln", text: String(i + 1) });
+				tr.createEl("td", { cls: "octo-code-line", text: lines[i] || " " });
 			}
 		}
 	}

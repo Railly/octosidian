@@ -483,3 +483,13 @@ export async function getRepoIssues(owner: string, repo: string, perPage = 5): P
 		return [];
 	}
 }
+
+export async function getFileContent(owner: string, repo: string, path: string): Promise<{ content: string; size: number; encoding: string } | null> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.getContent({ owner, repo, path, mediaType: { format: "raw" } });
+		return { content: data as unknown as string, size: (data as any).length ?? 0, encoding: "utf-8" };
+	} catch {
+		return null;
+	}
+}

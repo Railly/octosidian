@@ -1521,3 +1521,116 @@
 	text-overflow: ellipsis;
 	color: var(--text-normal);
 }
+
+/* --- File Viewer --- */
+
+.octo-file-viewer {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.octo-file-viewer-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	background: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: 13px;
+}
+
+.octo-file-viewer-back {
+	display: flex;
+	align-items: center;
+	cursor: pointer;
+	color: var(--text-muted);
+	padding: 2px;
+	border-radius: 4px;
+}
+
+.octo-file-viewer-back:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+
+.octo-file-viewer-path {
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.octo-file-viewer-body {
+	padding: 0;
+	overflow-x: auto;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.octo-code-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+.octo-code-ln {
+	padding: 0 12px;
+	text-align: right;
+	color: var(--text-faint);
+	user-select: none;
+	white-space: nowrap;
+	width: 1%;
+	border-right: 1px solid var(--background-modifier-border);
+	vertical-align: top;
+}
+
+.octo-code-line {
+	padding: 0 16px;
+	white-space: pre;
+	color: var(--text-normal);
+}
+
+.octo-code-table tr:hover {
+	background: var(--background-secondary);
+}
+
+/* --- Markdown rendering fixes --- */
+
+.octo-detail-body > :first-child,
+.octo-file-viewer-body > :first-child,
+.octo-repo-readme .octo-detail-body > :first-child {
+	margin-top: 0 !important;
+}
+
+.octo-detail-body pre,
+.octo-file-viewer-body pre {
+	position: relative;
+	margin: 8px 0;
+}
+
+.octo-detail-body pre code,
+.octo-file-viewer-body pre code {
+	padding: 0;
+	background: transparent;
+	border-radius: 0;
+}
+
+.octo-detail-body .copy-code-button,
+.octo-file-viewer-body .copy-code-button {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	padding: 4px 8px;
+	font-size: 11px;
+	border-radius: 4px;
+	opacity: 0;
+	transition: opacity 150ms;
+}
+
+.octo-detail-body pre:hover .copy-code-button,
+.octo-file-viewer-body pre:hover .copy-code-button {
+	opacity: 1;
+}
+
+.octo-file-viewer-body .markdown-rendered {
+	padding: 16px;
+}
