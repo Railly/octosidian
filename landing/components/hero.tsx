@@ -47,15 +47,7 @@ export function Hero() {
 				</div>
 
 				<div className="mt-16 relative mx-auto max-w-5xl">
-					<div className="rounded-xl border border-white/10 bg-[#0d0d0d] overflow-hidden shadow-2xl">
-						<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
-							<span className="h-3 w-3 rounded-full bg-red-500/80" />
-							<span className="h-3 w-3 rounded-full bg-yellow-500/80" />
-							<span className="h-3 w-3 rounded-full bg-green-500/80" />
-							<span className="ml-3 text-xs text-white/50 font-mono">
-								Obsidian &middot; Octosidian
-							</span>
-						</div>
+					<div className="rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
 						<Image
 							src="/preview-1920.png"
 							alt="Octosidian overview tab inside Obsidian showing open pull requests, issues, and review counts"
