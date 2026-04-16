@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -22,6 +22,18 @@ type DetailState =
 	| { type: "pr"; owner: string; repo: string; number: number; data: PullPageData | null; loading: boolean }
 	| { type: "issue"; owner: string; repo: string; number: number; data: IssuePageData | null; loading: boolean };
 
+interface RepoViewState {
+	owner: string;
+	repo: string;
+	tree: Array<{ name: string; type: string; path: string; size: number }> | null;
+	readme: string | null;
+	overview: { description: string; stars: number; forks: number; watchers: number; language: string | null; license: string | null; defaultBranch: string } | null;
+	recentPrs: PullSummary[];
+	recentIssues: IssueSummary[];
+	loading: boolean;
+	treePath: string;
+}
+
 export class OctosidianView extends ItemView {
 	plugin: OctosidianPlugin;
 	pullsData: MyPullsResult | null = null;
@@ -36,6 +48,7 @@ export class OctosidianView extends ItemView {
 	repoFilter: string | null = null;
 	statusFilter: "all" | "open" | "draft" | "merged" | "closed" = "all";
 	detail: DetailState = null;
+	repoView: RepoViewState | null = null;
 	lastFetched = 0;
 	expandedRows: Set<number> = new Set();
 	expandedCache: Map<number, PullPageData | IssuePageData> = new Map();
@@ -142,6 +155,51 @@ export class OctosidianView extends ItemView {
 		this.render();
 	}
 
+	async openRepoView(owner: string, repo: string) {
+		this.repoView = { owner, repo, tree: null, readme: null, overview: null, recentPrs: [], recentIssues: [], loading: true, treePath: "" };
+		this.detail = null;
+		this.render();
+		try {
+			const [overview, tree, readme, prs, issues] = await Promise.all([
+				getRepoOverview(owner, repo),
+				getRepoTree(owner, repo),
+				getRepoReadme(owner, repo),
+				getRepoPulls(owner, repo),
+				getRepoIssues(owner, repo),
+			]);
+			if (this.repoView?.owner === owner && this.repoView?.repo === repo) {
+				this.repoView = { ...this.repoView, overview, tree, readme, recentPrs: prs, recentIssues: issues, loading: false };
+				this.render();
+			}
+		} catch {
+			new Notice("Octosidian: Failed to load repo");
+			this.repoView = null;
+			this.render();
+		}
+	}
+
+	async navigateRepoTree(path: string) {
+		if (!this.repoView) return;
+		const { owner, repo } = this.repoView;
+		this.repoView = { ...this.repoView, tree: null, treePath: path, loading: true };
+		this.render();
+		try {
+			const tree = await getRepoTree(owner, repo, path);
+			if (this.repoView?.treePath === path) {
+				this.repoView = { ...this.repoView, tree, loading: false };
+				this.render();
+			}
+		} catch {
+			this.repoView = { ...this.repoView, tree: [], loading: false };
+			this.render();
+		}
+	}
+
+	closeRepoView() {
+		this.repoView = null;
+		this.render();
+	}
+
 	getPrTotal(): number {
 		if (!this.pullsData) return 0;
 		const d = this.pullsData;
@@ -168,19 +226,26 @@ export class OctosidianView extends ItemView {
 			return;
 		}
 
-		if (this.detail) {
-			this.renderDetailView(container);
-			return;
-		}
-
 		this.renderTopNav(container);
 
-		if (this.loading && !this.pullsData) {
-			this.renderLoading(container);
+		const body = container.createDiv({ cls: "octo-body" });
+
+		if (this.detail) {
+			this.renderDetailView(body);
 			return;
 		}
 
-		const grid = container.createDiv({ cls: "octo-grid" });
+		if (this.repoView) {
+			this.renderRepoView(body);
+			return;
+		}
+
+		if (this.loading && !this.pullsData) {
+			this.renderLoading(body);
+			return;
+		}
+
+		const grid = body.createDiv({ cls: "octo-grid" });
 
 		switch (this.activeTab) {
 			case "overview":
@@ -503,7 +568,9 @@ export class OctosidianView extends ItemView {
 		info.createDiv({ cls: "octo-pr-title", text: pr.title });
 
 		const meta = info.createDiv({ cls: "octo-pr-meta" });
-		meta.createSpan({ text: `${pr.repository.fullName} #${pr.number}` });
+		const repoLink = meta.createSpan({ cls: "octo-repo-link", text: pr.repository.fullName });
+		repoLink.addEventListener("click", (e) => { e.stopPropagation(); this.openRepoView(pr.repository.owner, pr.repository.name); });
+		meta.createSpan({ text: ` #${pr.number}` });
 		if (pr.author) {
 			meta.createSpan({ cls: "octo-dot", text: " · " });
 			const avatar = meta.createEl("img", { cls: "octo-avatar", attr: { src: pr.author.avatarUrl, alt: pr.author.login, width: "14", height: "14" } });
@@ -521,11 +588,6 @@ export class OctosidianView extends ItemView {
 		}
 
 		const actions = row.createDiv({ cls: "octo-pr-actions" });
-		if (pr.comments > 0) {
-			const c = actions.createSpan({ cls: "octo-comment-count" });
-			c.innerHTML = ICONS.comment;
-			c.createSpan({ text: ` ${pr.comments}` });
-		}
 
 		const previewBtn = actions.createEl("button", { cls: "octo-preview-btn", text: "Preview" });
 		previewBtn.addEventListener("click", async (e) => {
@@ -548,6 +610,12 @@ export class OctosidianView extends ItemView {
 				}
 			}
 		});
+
+		if (pr.comments > 0) {
+			const c = actions.createSpan({ cls: "octo-comment-count" });
+			c.innerHTML = ICONS.comment;
+			c.createSpan({ text: ` ${pr.comments}` });
+		}
 	}
 
 	renderExpandedComments(parent: HTMLElement, data: PullPageData | IssuePageData) {
@@ -654,7 +722,9 @@ export class OctosidianView extends ItemView {
 		info.createDiv({ cls: "octo-pr-title", text: issue.title });
 
 		const meta = info.createDiv({ cls: "octo-pr-meta" });
-		meta.createSpan({ text: `${issue.repository.fullName} #${issue.number}` });
+		const repoLink = meta.createSpan({ cls: "octo-repo-link", text: issue.repository.fullName });
+		repoLink.addEventListener("click", (e) => { e.stopPropagation(); this.openRepoView(issue.repository.owner, issue.repository.name); });
+		meta.createSpan({ text: ` #${issue.number}` });
 		if (issue.author) {
 			meta.createSpan({ cls: "octo-dot", text: " · " });
 			const avatar = meta.createEl("img", { cls: "octo-avatar", attr: { src: issue.author.avatarUrl, alt: issue.author.login, width: "14", height: "14" } });
@@ -672,12 +742,6 @@ export class OctosidianView extends ItemView {
 		}
 
 		const actions = row.createDiv({ cls: "octo-pr-actions" });
-		if (issue.comments > 0) {
-			const c = actions.createSpan({ cls: "octo-comment-count" });
-			c.innerHTML = ICONS.comment;
-			c.createSpan({ text: ` ${issue.comments}` });
-		}
-
 		const previewBtn = actions.createEl("button", { cls: "octo-preview-btn", text: "Preview" });
 		previewBtn.addEventListener("click", async (e) => {
 			e.stopPropagation();
@@ -699,6 +763,12 @@ export class OctosidianView extends ItemView {
 				}
 			}
 		});
+
+		if (issue.comments > 0) {
+			const c = actions.createSpan({ cls: "octo-comment-count" });
+			c.innerHTML = ICONS.comment;
+			c.createSpan({ text: ` ${issue.comments}` });
+		}
 	}
 
 	// --- REVIEWS PAGE ---
@@ -978,6 +1048,115 @@ export class OctosidianView extends ItemView {
 				await this.openIssueDetail(this.detail!.owner, this.detail!.repo, issue.number);
 			} catch { new Notice("Octosidian: Failed to post comment"); submitBtn.disabled = false; submitBtn.textContent = "Comment"; }
 		});
+	}
+
+	// --- REPO VIEW ---
+
+	renderRepoView(parent: HTMLElement) {
+		const rv = this.repoView!;
+		const wrapper = parent.createDiv({ cls: "octo-repo" });
+
+		const topbar = wrapper.createDiv({ cls: "octo-detail-topbar" });
+		const backBtn = topbar.createDiv({ cls: "octo-detail-back" });
+		backBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
+		backBtn.createSpan({ text: " Back" });
+		backBtn.addEventListener("click", () => this.closeRepoView());
+
+		const repoName = topbar.createDiv({ cls: "octo-repo-header-name" });
+		repoName.createSpan({ cls: "octo-repo-owner", text: rv.owner });
+		repoName.createSpan({ text: " / " });
+		repoName.createSpan({ cls: "octo-repo-name-bold", text: rv.repo });
+
+		const openGh = topbar.createDiv({ cls: "octo-detail-open-gh" });
+		openGh.createSpan({ text: "Open in GitHub" });
+		openGh.addEventListener("click", () => window.open(`https://github.com/${rv.owner}/${rv.repo}`, "_blank"));
+
+		if (rv.loading) {
+			this.renderLoading(wrapper);
+			return;
+		}
+
+		const grid = wrapper.createDiv({ cls: "octo-repo-grid" });
+
+		const mainCol = grid.createDiv({ cls: "octo-repo-main" });
+
+		if (rv.treePath) {
+			const breadcrumb = mainCol.createDiv({ cls: "octo-repo-breadcrumb" });
+			const rootLink = breadcrumb.createSpan({ cls: "octo-repo-link", text: rv.repo });
+			rootLink.addEventListener("click", () => this.navigateRepoTree(""));
+			const parts = rv.treePath.split("/");
+			for (let i = 0; i < parts.length; i++) {
+				breadcrumb.createSpan({ text: " / " });
+				const partPath = parts.slice(0, i + 1).join("/");
+				if (i < parts.length - 1) {
+					const link = breadcrumb.createSpan({ cls: "octo-repo-link", text: parts[i] });
+					link.addEventListener("click", () => this.navigateRepoTree(partPath));
+				} else {
+					breadcrumb.createSpan({ text: parts[i] });
+				}
+			}
+		}
+
+		if (rv.tree && rv.tree.length > 0) {
+			const fileTable = mainCol.createDiv({ cls: "octo-file-tree" });
+			for (const item of rv.tree) {
+				const fileRow = fileTable.createDiv({ cls: "octo-file-row" });
+				const icon = fileRow.createSpan({ cls: "octo-file-icon" });
+				icon.innerHTML = item.type === "dir"
+					? `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"></path></svg>`
+					: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"></path></svg>`;
+				const nameEl = fileRow.createSpan({ cls: `octo-file-name ${item.type === "dir" ? "octo-file-dir" : ""}`, text: item.name });
+				if (item.type === "dir") {
+					fileRow.addEventListener("click", () => this.navigateRepoTree(item.path));
+				}
+			}
+		}
+
+		if (rv.readme && !rv.treePath) {
+			const readmeSection = mainCol.createDiv({ cls: "octo-repo-readme" });
+			readmeSection.createDiv({ cls: "octo-repo-readme-header", text: "README.md" });
+			const readmeBody = readmeSection.createDiv({ cls: "octo-detail-body" });
+			MarkdownRenderer.render(this.app, rv.readme, readmeBody, "", this);
+		}
+
+		const sideCol = grid.createDiv({ cls: "octo-repo-side" });
+
+		if (rv.overview) {
+			const about = sideCol.createDiv({ cls: "octo-repo-about" });
+			about.createDiv({ cls: "octo-repo-section-title", text: "About" });
+			if (rv.overview.description) about.createDiv({ cls: "octo-repo-desc", text: rv.overview.description });
+
+			const stats = about.createDiv({ cls: "octo-repo-stats" });
+			stats.createSpan({ cls: "octo-repo-stat", text: `${rv.overview.stars} Stars` });
+			stats.createSpan({ cls: "octo-repo-stat", text: `${rv.overview.forks} Forks` });
+			stats.createSpan({ cls: "octo-repo-stat", text: `${rv.overview.watchers} Watchers` });
+			if (rv.overview.language) stats.createSpan({ cls: "octo-repo-stat", text: rv.overview.language });
+			if (rv.overview.license) stats.createSpan({ cls: "octo-repo-stat", text: rv.overview.license });
+		}
+
+		if (rv.recentPrs.length > 0) {
+			const prSection = sideCol.createDiv({ cls: "octo-repo-sidebar-section" });
+			prSection.createDiv({ cls: "octo-repo-section-title", text: `Pull Requests ${rv.recentPrs.length}` });
+			for (const pr of rv.recentPrs) {
+				const row = prSection.createDiv({ cls: "octo-repo-sidebar-row" });
+				const iconEl = row.createSpan({ cls: "octo-icon-open" });
+				iconEl.innerHTML = ICONS.prOpen;
+				row.createSpan({ cls: "octo-repo-sidebar-title", text: pr.title });
+				row.addEventListener("click", () => this.openPrDetail(rv.owner, rv.repo, pr.number));
+			}
+		}
+
+		if (rv.recentIssues.length > 0) {
+			const issueSection = sideCol.createDiv({ cls: "octo-repo-sidebar-section" });
+			issueSection.createDiv({ cls: "octo-repo-section-title", text: `Issues ${rv.recentIssues.length}` });
+			for (const issue of rv.recentIssues) {
+				const row = issueSection.createDiv({ cls: "octo-repo-sidebar-row" });
+				const iconEl = row.createSpan({ cls: "octo-icon-open" });
+				iconEl.innerHTML = ICONS.issueOpen;
+				row.createSpan({ cls: "octo-repo-sidebar-title", text: issue.title });
+				row.addEventListener("click", () => this.openIssueDetail(rv.owner, rv.repo, issue.number));
+			}
+		}
 	}
 
 	// --- SHARED ---
