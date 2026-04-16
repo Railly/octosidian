@@ -418,3 +418,68 @@ export async function getNotifications(all = false): Promise<GitHubNotification[
 		return [];
 	}
 }
+
+export async function getRepoOverview(owner: string, repo: string) {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.get({ owner, repo });
+		return {
+			description: data.description ?? "",
+			stars: data.stargazers_count,
+			forks: data.forks_count,
+			watchers: data.watchers_count,
+			language: data.language,
+			license: data.license?.spdx_id ?? null,
+			defaultBranch: data.default_branch,
+		};
+	} catch {
+		return null;
+	}
+}
+
+export async function getRepoTree(owner: string, repo: string, path = "") {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.getContent({ owner, repo, path });
+		if (!Array.isArray(data)) return [];
+		return data
+			.map((item: any) => ({ name: item.name, type: item.type as string, path: item.path as string, size: item.size ?? 0 }))
+			.sort((a: { type: string; name: string }, b: { type: string; name: string }) => {
+				if (a.type === "dir" && b.type !== "dir") return -1;
+				if (a.type !== "dir" && b.type === "dir") return 1;
+				return a.name.localeCompare(b.name);
+			});
+	} catch {
+		return [];
+	}
+}
+
+export async function getRepoReadme(owner: string, repo: string): Promise<string | null> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.getReadme({ owner, repo, mediaType: { format: "raw" } });
+		return data as unknown as string;
+	} catch {
+		return null;
+	}
+}
+
+export async function getRepoPulls(owner: string, repo: string, perPage = 5): Promise<PullSummary[]> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.pulls.list({ owner, repo, state: "open", per_page: perPage, sort: "updated", direction: "desc" });
+		return data.map((pr: any) => mapPullSummary(pr as Record<string, unknown>));
+	} catch {
+		return [];
+	}
+}
+
+export async function getRepoIssues(owner: string, repo: string, perPage = 5): Promise<IssueSummary[]> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.issues.listForRepo({ owner, repo, state: "open", per_page: perPage, sort: "updated", direction: "desc" });
+		return data.filter((i: any) => !i.pull_request).map((i: any) => mapIssueSummary(i as Record<string, unknown>));
+	} catch {
+		return [];
+	}
+}
