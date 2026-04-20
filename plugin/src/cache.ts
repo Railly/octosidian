@@ -1,16 +1,30 @@
-import type { MyPullsResult, MyIssuesResult } from "./github/types";
+import type { MyPullsResult, MyIssuesResult, MyReposResult } from "./github/types";
+
+export interface OpenDetailTab {
+	id: string;
+	type: "pr" | "issue" | "repo" | "profile";
+	title: string;
+	iconColor: string;
+	owner?: string;
+	repo?: string;
+	number?: number;
+	login?: string;
+	avatarUrl?: string;
+}
 
 export interface CachedData {
 	pulls: MyPullsResult | null;
 	issues: MyIssuesResult | null;
+	repos: MyReposResult | null;
 	lastFetched: number;
 	lastSeen: Record<string, number>;
+	openTabs: OpenDetailTab[];
 }
 
-const EMPTY_CACHE: CachedData = { pulls: null, issues: null, lastFetched: 0, lastSeen: {} };
+const EMPTY_CACHE: CachedData = { pulls: null, issues: null, repos: null, lastFetched: 0, lastSeen: {}, openTabs: [] };
 
 export function emptyCacheData(): CachedData {
-	return { ...EMPTY_CACHE, lastSeen: {} };
+	return { ...EMPTY_CACHE, lastSeen: {}, openTabs: [] };
 }
 
 export function isCacheStale(cache: CachedData, maxAgeMs: number): boolean {

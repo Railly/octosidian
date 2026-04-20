@@ -18,6 +18,10 @@ import type {
 	CommentReactions,
 	ReviewComment,
 	ReviewThread,
+	Repository,
+	MyReposResult,
+	GitHubProfile,
+	ProfilePageData,
 } from "./types";
 
 function requireClient() {
@@ -578,4 +582,112 @@ export async function getFileContent(owner: string, repo: string, path: string):
 	} catch {
 		return null;
 	}
+}
+
+export async function getMyRepos(): Promise<MyReposResult> {
+	const client = requireClient();
+	const allRepos: Repository[] = [];
+	try {
+		for (let page = 1; page <= 2; page++) {
+			const { data } = await client.rest.repos.listForAuthenticatedUser({
+				sort: "updated",
+				per_page: 100,
+				page,
+			});
+			if (data.length === 0) break;
+			for (const r of data) {
+				allRepos.push({
+					id: r.id,
+					name: r.name,
+					fullName: r.full_name,
+					owner: r.owner.login,
+					description: r.description ?? null,
+					url: r.html_url,
+					language: r.language ?? null,
+					stars: r.stargazers_count ?? 0,
+					forks: r.forks_count ?? 0,
+					isPrivate: r.private,
+					isFork: r.fork,
+					isArchived: r.archived ?? false,
+					updatedAt: r.updated_at ?? new Date().toISOString(),
+					pushedAt: r.pushed_at ?? new Date().toISOString(),
+				});
+			}
+		}
+	} catch {
+		/* 403-safe — return what we have */
+	}
+	return { repos: allRepos, fetchedAt: Date.now() };
+}
+
+export async function getProfilePageData(username: string): Promise<ProfilePageData> {
+	const client = requireClient();
+	let profile: GitHubProfile | null = null;
+	let repos: Repository[] = [];
+	let recentPulls: PullSummary[] = [];
+	let recentIssues: IssueSummary[] = [];
+
+	try {
+		const { data: u } = await client.rest.users.getByUsername({ username });
+		profile = {
+			login: u.login,
+			name: u.name ?? null,
+			avatarUrl: u.avatar_url,
+			url: u.html_url,
+			bio: u.bio ?? null,
+			company: u.company ?? null,
+			location: u.location ?? null,
+			blog: u.blog ?? null,
+			email: u.email ?? null,
+			followers: u.followers ?? 0,
+			following: u.following ?? 0,
+			publicRepos: u.public_repos ?? 0,
+			createdAt: u.created_at ?? new Date().toISOString(),
+			type: u.type ?? "User",
+		};
+	} catch { /* 403/404 safe */ }
+
+	try {
+		const { data: repoData } = await client.rest.repos.listForUser({
+			username,
+			type: "owner",
+			per_page: 6,
+			sort: "updated",
+		});
+		repos = repoData.map((r: any) => ({
+			id: r.id,
+			name: r.name,
+			fullName: r.full_name,
+			owner: r.owner.login,
+			description: r.description ?? null,
+			url: r.html_url,
+			language: r.language ?? null,
+			stars: r.stargazers_count ?? 0,
+			forks: r.forks_count ?? 0,
+			isPrivate: r.private,
+			isFork: r.fork,
+			isArchived: r.archived ?? false,
+			updatedAt: r.updated_at ?? new Date().toISOString(),
+			pushedAt: r.pushed_at ?? new Date().toISOString(),
+		}));
+	} catch { /* 403/404 safe */ }
+
+	try {
+		const [pullsRes, issuesRes] = await Promise.all([
+			client.rest.search.issuesAndPullRequests({
+				q: `is:pr is:open author:${username}`,
+				per_page: 5,
+				sort: "updated",
+			}),
+			client.rest.search.issuesAndPullRequests({
+				q: `is:issue is:open author:${username}`,
+				per_page: 5,
+				sort: "updated",
+			}),
+		]);
+		recentPulls = pullsRes.data.items.map((item) => mapPullSummary(item as Record<string, unknown>));
+		recentIssues = issuesRes.data.items.map((item) => mapIssueSummary(item as Record<string, unknown>));
+	} catch { /* 403/404 safe */ }
+
+	return { profile, repos, recentPulls, recentIssues };
 }

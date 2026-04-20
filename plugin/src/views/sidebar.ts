@@ -1,10 +1,12 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getMyRepos, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
+	MyReposResult,
+	Repository,
 	PullSummary,
 	IssueSummary,
 	PullPageData,
@@ -27,7 +29,8 @@ function labelAttrs(color: string): { style: string } {
 
 export const OCTO_VIEW_TYPE = "octo-view";
 
-type TopTab = "overview" | "inbox" | "pulls" | "issues" | "reviews";
+type TopTab = "overview" | "inbox" | "pulls" | "issues" | "reviews" | "repos";
+type RepoFilter = "all" | "public" | "private";
 type RoleFilter = "all" | "review-requested" | "authored" | "assigned" | "mentioned" | "involved";
 type DetailState =
 	| null
@@ -68,6 +71,9 @@ export class OctosidianView extends ItemView {
 	plugin: OctosidianPlugin;
 	pullsData: MyPullsResult | null = null;
 	issuesData: MyIssuesResult | null = null;
+	reposData: MyReposResult | null = null;
+	activeRepoFilter: RepoFilter = "all";
+	repoSort: "updated" | "name" | "stars" = "updated";
 	notifications: GitHubNotification[] = [];
 	inboxFilter: "unread" | "all" = "unread";
 	loading = false;
@@ -99,9 +105,10 @@ export class OctosidianView extends ItemView {
 		this.containerEl.addClass("octo-container");
 
 		const cached = this.plugin.cache;
-		if (cached.pulls || cached.issues) {
+		if (cached.pulls || cached.issues || cached.repos) {
 			this.pullsData = cached.pulls;
 			this.issuesData = cached.issues;
+			this.reposData = cached.repos;
 			this.lastFetched = cached.lastFetched;
 		}
 
@@ -206,9 +213,10 @@ export class OctosidianView extends ItemView {
 		this.loading = true;
 		this.render();
 		try {
-			const [pulls, issues, notifs] = await Promise.all([getMyPulls(), getMyIssues(), getNotifications()]);
+			const [pulls, issues, repos, notifs] = await Promise.all([getMyPulls(), getMyIssues(), getMyRepos(), getNotifications()]);
 			this.pullsData = pulls;
 			this.issuesData = issues;
+			this.reposData = repos;
 			this.notifications = notifs;
 			this.lastFetched = Date.now();
 
@@ -216,6 +224,7 @@ export class OctosidianView extends ItemView {
 				...this.plugin.cache,
 				pulls,
 				issues,
+				repos,
 				lastFetched: this.lastFetched,
 			};
 			this.plugin.saveCache();
@@ -413,6 +422,9 @@ export class OctosidianView extends ItemView {
 			case "reviews":
 				this.renderReviewsPage(grid);
 				break;
+			case "repos":
+				this.renderReposPage(grid);
+				break;
 		}
 	}
 
@@ -427,6 +439,7 @@ export class OctosidianView extends ItemView {
 			{ id: "pulls", label: "Pull Requests", count: this.getPrTotal(), icon: ICONS.prOpen },
 			{ id: "issues", label: "Issues", count: this.getIssueTotal(), icon: ICONS.issueOpen },
 			{ id: "reviews", label: "Reviews", count: this.getReviewTotal(), icon: ICONS.eye },
+		{ id: "repos", label: "Repositories", count: this.reposData?.repos.length ?? 0, icon: ICONS.repo },
 		];
 
 		for (const tab of tabDefs) {
@@ -442,6 +455,7 @@ export class OctosidianView extends ItemView {
 			btn.addEventListener("click", () => {
 				this.activeTab = tab.id;
 				this.activeRole = "all";
+				this.activeRepoFilter = "all";
 				this.searchQuery = "";
 				this.detail = null;
 				this.repoView = null;
@@ -1974,5 +1988,114 @@ export class OctosidianView extends ItemView {
 		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
 		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
 		return `${Math.floor(diff / 86400)}d ago`;
+	}
+
+	renderReposPage(grid: HTMLElement) {
+		const aside = grid.createDiv({ cls: "octo-aside" });
+		const header = aside.createDiv({ cls: "octo-aside-header" });
+		header.createEl("h1", { cls: "octo-aside-title", text: "Repositories" });
+		header.createEl("p", { cls: "octo-aside-subtitle", text: `${this.reposData?.repos.length ?? 0} owned repositories` });
+
+		const nav = aside.createEl("nav", { cls: "octo-role-nav" });
+		const facets: Array<{ id: RepoFilter; label: string; count: number }> = [
+			{ id: "all", label: "All", count: this.reposData?.repos.length ?? 0 },
+			{ id: "public", label: "Public", count: this.reposData?.repos.filter((r) => !r.isPrivate).length ?? 0 },
+			{ id: "private", label: "Private", count: this.reposData?.repos.filter((r) => r.isPrivate).length ?? 0 },
+		];
+		for (const f of facets) {
+			this.renderRepoFacet(nav, f);
+		}
+
+		const main = grid.createDiv({ cls: "octo-main" });
+		this.renderSearchBar(main, "pr");
+
+		const repos = this.getFilteredRepos();
+		if (repos.length === 0) {
+			this.renderEmptyState(main, this.searchQuery ? "No repositories match your search." : "No repositories found.");
+			return;
+		}
+
+		const list = main.createDiv({ cls: "octo-repo-list" });
+		for (const r of repos) {
+			this.renderRepoRow(list, r);
+		}
+	}
+
+	renderRepoFacet(nav: HTMLElement, f: { id: RepoFilter; label: string; count: number }) {
+		const card = nav.createDiv({
+			cls: `octo-role-card${this.activeRepoFilter === f.id ? " octo-role-card-active" : ""}`,
+		});
+		card.createSpan({ cls: "octo-role-label", text: f.label });
+		card.createSpan({ cls: "octo-role-count", text: String(f.count) });
+		card.addEventListener("click", () => {
+			this.activeRepoFilter = f.id;
+			this.render();
+		});
+	}
+
+	getFilteredRepos(): Repository[] {
+		const all = this.reposData?.repos ?? [];
+		let filtered = all;
+
+		if (this.activeRepoFilter === "public") {
+			filtered = filtered.filter((r) => !r.isPrivate);
+		} else if (this.activeRepoFilter === "private") {
+			filtered = filtered.filter((r) => r.isPrivate);
+		}
+
+		if (this.searchQuery) {
+			const q = this.searchQuery.toLowerCase();
+			filtered = filtered.filter(
+				(r) =>
+					r.fullName.toLowerCase().includes(q) ||
+					(r.description ?? "").toLowerCase().includes(q),
+			);
+		}
+
+		if (this.repoSort === "name") {
+			filtered = [...filtered].sort((a, b) => a.fullName.localeCompare(b.fullName));
+		} else if (this.repoSort === "stars") {
+			filtered = [...filtered].sort((a, b) => b.stars - a.stars);
+		} else {
+			filtered = [...filtered].sort(
+				(a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+			);
+		}
+
+		return filtered;
+	}
+
+	renderRepoRow(parent: HTMLElement, r: Repository) {
+		const row = parent.createDiv({ cls: "octo-repo-row" });
+
+		const left = row.createDiv({ cls: "octo-repo-left" });
+		const visIcon = left.createSpan({ cls: "octo-repo-vis" });
+		visIcon.innerHTML = r.isPrivate ? ICONS.lock : ICONS.repo;
+		left.createSpan({ cls: "octo-repo-name", text: r.fullName });
+		if (r.isFork) {
+			left.createSpan({ cls: "octo-repo-tag", text: "fork" });
+		}
+		if (r.isArchived) {
+			left.createSpan({ cls: "octo-repo-tag", text: "archived" });
+		}
+
+		const desc = row.createDiv({ cls: "octo-repo-desc", text: r.description ?? "" });
+		desc.title = r.description ?? "";
+
+		const meta = row.createDiv({ cls: "octo-repo-meta" });
+		if (r.language) {
+			meta.createSpan({ cls: "octo-repo-lang", text: r.language });
+		}
+		meta.createSpan({ text: this.timeAgo(r.updatedAt) });
+		if (r.stars > 0) {
+			meta.createSpan({ text: `★ ${r.stars}` });
+		}
+		if (r.forks > 0) {
+			meta.createSpan({ text: `⑂ ${r.forks}` });
+		}
+
+		row.addEventListener("click", () => {
+			this.openRepoView(r.owner, r.name);
+		});
 	}
 }

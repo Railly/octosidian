@@ -202,6 +202,52 @@ export type GitHubUserProfile = {
 	url: string;
 };
 
+export type Repository = {
+	id: number;
+	name: string;
+	fullName: string;
+	owner: string;
+	description: string | null;
+	url: string;
+	language: string | null;
+	stars: number;
+	forks: number;
+	isPrivate: boolean;
+	isFork: boolean;
+	isArchived: boolean;
+	updatedAt: string;
+	pushedAt: string;
+};
+
+export type MyReposResult = {
+	repos: Repository[];
+	fetchedAt: number;
+};
+
+export type GitHubProfile = {
+	login: string;
+	name: string | null;
+	avatarUrl: string;
+	url: string;
+	bio: string | null;
+	company: string | null;
+	location: string | null;
+	blog: string | null;
+	email: string | null;
+	followers: number;
+	following: number;
+	publicRepos: number;
+	createdAt: string;
+	type: string;
+};
+
+export type ProfilePageData = {
+	profile: GitHubProfile | null;
+	repos: Repository[];
+	recentPulls: PullSummary[];
+	recentIssues: IssueSummary[];
+};
+
 export type GitHubNotification = {
 	id: string;
 	unread: boolean;
