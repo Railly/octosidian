@@ -293,6 +293,7 @@ export async function getPullPageData(
 		rename: e.rename ?? undefined,
 		milestone: e.milestone ?? undefined,
 		reviewState: e.state ?? undefined,
+		stateReason: e.state_reason ?? null,
 	}));
 
 	return { detail, comments, events };
@@ -333,6 +334,7 @@ export async function getIssuePageData(
 		assignee: e.assignee ? mapActor(e.assignee) : undefined,
 		rename: e.rename ?? undefined,
 		milestone: e.milestone ?? undefined,
+		stateReason: e.state_reason ?? null,
 	}));
 
 	return { detail, comments, events };

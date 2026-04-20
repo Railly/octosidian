@@ -1902,3 +1902,77 @@
 	outline-offset: -2px;
 	background: var(--background-modifier-hover);
 }
+
+/* --- Activity Timeline (Slice A) --- */
+
+.octo-timeline {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	padding-left: 24px;
+}
+
+.octo-timeline::before {
+	content: "";
+	position: absolute;
+	left: 7px;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--background-modifier-border);
+	border-radius: 1px;
+}
+
+.octo-timeline-item {
+	position: relative;
+}
+
+.octo-timeline-item-comment {
+	padding: 4px 0 8px 0;
+}
+
+.octo-timeline-item-event {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 0;
+	min-height: 28px;
+}
+
+.octo-timeline-icon {
+	position: absolute;
+	left: -22px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	flex-shrink: 0;
+	z-index: 1;
+}
+
+.octo-timeline-item-comment .octo-timeline-icon {
+	top: 10px;
+	transform: none;
+}
+
+.octo-timeline-text {
+	font-size: 12px;
+	color: var(--text-muted);
+	flex: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.octo-timeline-time {
+	font-size: 11px;
+	color: var(--text-faint);
+	flex-shrink: 0;
+	white-space: nowrap;
+}

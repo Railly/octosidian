@@ -12,6 +12,8 @@ import type {
 	GitHubNotification,
 	PullComment,
 	IssueComment,
+	TimelineEvent,
+	GroupedLabelEvent,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
@@ -1096,23 +1098,7 @@ export class OctosidianView extends ItemView {
 			}
 		}
 
-		if (data.comments.length > 0) {
-			const commentsSection = content.createDiv({ cls: "octo-detail-comments" });
-			commentsSection.createDiv({ cls: "octo-detail-section-title", text: `Comments (${data.comments.length})` });
-			for (const comment of data.comments) {
-				const c = commentsSection.createDiv({ cls: "octo-comment" });
-				const cHeader = c.createDiv({ cls: "octo-comment-header" });
-				if (comment.author) {
-					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
-					avatar.addEventListener("error", () => avatar.remove());
-					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
-				}
-				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
-				const cBody = c.createDiv({ cls: "octo-comment-body" });
-				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
-				this.renderReactions(c, comment);
-			}
-		}
+		this.renderTimeline(content, data.comments, data.events);
 
 		const commentForm = content.createDiv({ cls: "octo-comment-form" });
 		const textarea = commentForm.createEl("textarea", { cls: "octo-comment-textarea", attr: { placeholder: "Leave a comment..." } });
@@ -1179,23 +1165,7 @@ export class OctosidianView extends ItemView {
 			MarkdownRenderer.render(this.app, issue.body, bodyContainer, "", this);
 		}
 
-		if (data.comments.length > 0) {
-			const commentsSection = content.createDiv({ cls: "octo-detail-comments" });
-			commentsSection.createDiv({ cls: "octo-detail-section-title", text: `Comments (${data.comments.length})` });
-			for (const comment of data.comments) {
-				const c = commentsSection.createDiv({ cls: "octo-comment" });
-				const cHeader = c.createDiv({ cls: "octo-comment-header" });
-				if (comment.author) {
-					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
-					avatar.addEventListener("error", () => avatar.remove());
-					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
-				}
-				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
-				const cBody = c.createDiv({ cls: "octo-comment-body" });
-				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
-				this.renderReactions(c, comment);
-			}
-		}
+		this.renderTimeline(content, data.comments, data.events);
 
 		const commentForm = content.createDiv({ cls: "octo-comment-form" });
 		const textarea = commentForm.createEl("textarea", { cls: "octo-comment-textarea", attr: { placeholder: "Leave a comment..." } });
@@ -1676,6 +1646,146 @@ export class OctosidianView extends ItemView {
 		}
 		this.plugin.saveCache();
 		this.render();
+	}
+
+	renderTimeline(parent: HTMLElement, comments: PullComment[] | IssueComment[], events: TimelineEvent[]) {
+		const SUPPORTED = new Set([
+			"labeled", "unlabeled", "assigned", "unassigned",
+			"review_requested", "review_request_removed",
+			"renamed", "closed", "reopened", "merged",
+			"referenced", "cross-referenced",
+			"milestoned", "demilestoned",
+			"head_ref_deleted", "head_ref_restored",
+			"ready_for_review", "convert_to_draft",
+		]);
+
+		const filteredEvents = events.filter((e) => SUPPORTED.has(e.event));
+
+		type CommentEntry = { kind: "comment"; data: PullComment | IssueComment; ts: number };
+		type EventEntry = { kind: "event"; data: TimelineEvent | GroupedLabelEvent; ts: number };
+		type TimelineEntry = CommentEntry | EventEntry;
+
+		const grouped: (TimelineEvent | GroupedLabelEvent)[] = [];
+		let i = 0;
+		while (i < filteredEvents.length) {
+			const ev = filteredEvents[i];
+			if (ev.event === "labeled" || ev.event === "unlabeled") {
+				const actor = ev.actor?.login ?? null;
+				const baseTs = new Date(ev.createdAt).getTime();
+				const batch: TimelineEvent[] = [ev];
+				let j = i + 1;
+				while (j < filteredEvents.length) {
+					const next = filteredEvents[j];
+					if (
+						(next.event === "labeled" || next.event === "unlabeled") &&
+						next.actor?.login === actor &&
+						Math.abs(new Date(next.createdAt).getTime() - baseTs) <= 60000
+					) {
+						batch.push(next);
+						j++;
+					} else {
+						break;
+					}
+				}
+				if (batch.length === 1) {
+					grouped.push(ev);
+				} else {
+					const added = batch.filter((b) => b.event === "labeled").map((b) => b.label ?? { name: "", color: "" });
+					const removed = batch.filter((b) => b.event === "unlabeled").map((b) => b.label ?? { name: "", color: "" });
+					grouped.push({
+						kind: "grouped-label",
+						actor: ev.actor,
+						createdAt: ev.createdAt,
+						added: added.filter((l) => l.name),
+						removed: removed.filter((l) => l.name),
+					});
+				}
+				i = j;
+			} else {
+				grouped.push(ev);
+				i++;
+			}
+		}
+
+		const entries: TimelineEntry[] = [
+			...comments.map((c) => ({ kind: "comment" as const, data: c, ts: new Date(c.createdAt).getTime() })),
+			...grouped.map((e) => ({ kind: "event" as const, data: e, ts: new Date(e.createdAt).getTime() })),
+		].sort((a, b) => a.ts - b.ts);
+
+		if (entries.length === 0) return;
+
+		const section = parent.createDiv({ cls: "octo-detail-comments" });
+		section.createDiv({ cls: "octo-detail-section-title", text: `Activity (${entries.length})` });
+		const timeline = section.createDiv({ cls: "octo-timeline" });
+
+		for (const entry of entries) {
+			if (entry.kind === "comment") {
+				const comment = entry.data;
+				const item = timeline.createDiv({ cls: "octo-timeline-item octo-timeline-item-comment" });
+				const c = item.createDiv({ cls: "octo-comment" });
+				const cHeader = c.createDiv({ cls: "octo-comment-header" });
+				if (comment.author) {
+					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
+					avatar.addEventListener("error", () => avatar.remove());
+					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+				}
+				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
+				const cBody = c.createDiv({ cls: "octo-comment-body" });
+				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
+				this.renderReactions(c, comment);
+			} else {
+				const ev = entry.data;
+				const item = timeline.createDiv({ cls: "octo-timeline-item octo-timeline-item-event" });
+				const iconEl = item.createSpan({ cls: "octo-timeline-icon" });
+				const textEl = item.createSpan({ cls: "octo-timeline-text" });
+				item.createSpan({ cls: "octo-timeline-time", text: this.timeAgo(ev.createdAt) });
+
+				if ("kind" in ev && ev.kind === "grouped-label") {
+					iconEl.innerHTML = ev.added.length > 0 && ev.removed.length === 0
+						? ICONS.labelAdded
+						: ev.removed.length > 0 && ev.added.length === 0
+						? ICONS.labelRemoved
+						: ICONS.labelAdded;
+					const actor = ev.actor?.login ?? "someone";
+					if (ev.added.length > 0 && ev.removed.length === 0) {
+						textEl.textContent = `${actor} added labels: ${ev.added.map((l) => l.name).join(", ")}`;
+					} else if (ev.removed.length > 0 && ev.added.length === 0) {
+						textEl.textContent = `${actor} removed labels: ${ev.removed.map((l) => l.name).join(", ")}`;
+					} else {
+						textEl.textContent = `${actor} changed labels: added ${ev.added.map((l) => l.name).join(", ")}; removed ${ev.removed.map((l) => l.name).join(", ")}`;
+					}
+				} else {
+					const e = ev as TimelineEvent;
+					const actor = e.actor?.login ?? "someone";
+					switch (e.event) {
+						case "labeled": iconEl.innerHTML = ICONS.labelAdded; textEl.textContent = `${actor} added label ${e.label?.name ?? ""}`; break;
+						case "unlabeled": iconEl.innerHTML = ICONS.labelRemoved; textEl.textContent = `${actor} removed label ${e.label?.name ?? ""}`; break;
+						case "assigned": iconEl.innerHTML = ICONS.assigned; textEl.textContent = `${actor} assigned ${e.assignee?.login ?? ""}`; break;
+						case "unassigned": iconEl.innerHTML = ICONS.assigned; textEl.textContent = `${actor} unassigned ${e.assignee?.login ?? ""}`; break;
+						case "review_requested": iconEl.innerHTML = ICONS.reviewRequested; textEl.textContent = `${actor} requested review from ${e.requestedReviewer?.login ?? e.requestedTeam?.name ?? ""}`; break;
+						case "review_request_removed": iconEl.innerHTML = ICONS.reviewRequested; textEl.textContent = `${actor} removed review request from ${e.requestedReviewer?.login ?? e.requestedTeam?.name ?? ""}`; break;
+						case "renamed": iconEl.innerHTML = ICONS.renamed; textEl.textContent = `${actor} renamed from "${e.rename?.from ?? ""}" to "${e.rename?.to ?? ""}"`; break;
+						case "closed":
+							iconEl.innerHTML = ICONS.closed;
+							textEl.textContent = e.stateReason === "not_planned" ? `${actor} closed this as not planned` : `${actor} closed this`;
+							break;
+						case "reopened": iconEl.innerHTML = ICONS.reopened; textEl.textContent = `${actor} reopened this`; break;
+						case "merged": iconEl.innerHTML = ICONS.merged; textEl.textContent = `${actor} merged this`; break;
+						case "referenced":
+						case "cross-referenced":
+							iconEl.innerHTML = ICONS.referenced;
+							textEl.textContent = e.source ? `${actor} referenced this in #${e.source.number}` : `${actor} referenced this`;
+							break;
+						case "milestoned": iconEl.innerHTML = ICONS.milestone; textEl.textContent = `${actor} added to milestone ${e.milestone?.title ?? ""}`; break;
+						case "demilestoned": iconEl.innerHTML = ICONS.milestone; textEl.textContent = `${actor} removed from milestone ${e.milestone?.title ?? ""}`; break;
+						case "head_ref_deleted": iconEl.innerHTML = ICONS.branchDeleted; textEl.textContent = `${actor} deleted the branch`; break;
+						case "head_ref_restored": iconEl.innerHTML = ICONS.branchRestored; textEl.textContent = `${actor} restored the branch`; break;
+						case "ready_for_review": iconEl.innerHTML = ICONS.readyForReview; textEl.textContent = `${actor} marked as ready for review`; break;
+						case "convert_to_draft": iconEl.innerHTML = ICONS.draft; textEl.textContent = `${actor} converted to draft`; break;
+					}
+				}
+			}
+		}
 	}
 
 	renderReactions(parent: HTMLElement, comment: PullComment | IssueComment) {

@@ -146,7 +146,16 @@ export type TimelineEvent = {
 	} | null;
 	milestone?: { title: string } | null;
 	reviewState?: string;
+	stateReason?: string | null;
 	body?: string;
+};
+
+export type GroupedLabelEvent = {
+	kind: "grouped-label";
+	actor: GitHubActor | null;
+	createdAt: string;
+	added: Array<{ name: string; color: string }>;
+	removed: Array<{ name: string; color: string }>;
 };
 
 export type PullPageData = {
