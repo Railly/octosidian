@@ -1894,3 +1894,11 @@
 .octo-save-search-btn {
 	font-weight: 500;
 }
+
+/* --- Keyboard focus --- */
+
+.octo-row-focused {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+	background: var(--background-modifier-hover);
+}

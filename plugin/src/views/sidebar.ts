@@ -75,6 +75,8 @@ export class OctosidianView extends ItemView {
 	repoFilter: string | null = null;
 	statusFilter: "all" | "open" | "draft" | "merged" | "closed" = "all";
 	detail: DetailState = null;
+	focusedIndex = 0;
+	gPrefixPending = false;
 	repoView: RepoViewState | null = null;
 	lastFetched = 0;
 	expandedRows: Set<number> = new Set();
@@ -101,12 +103,99 @@ export class OctosidianView extends ItemView {
 
 		this.render();
 
+		this.registerDomEvent(this.containerEl, "keydown", this.onKeyDown);
+
 		if (getClient()) {
 			this.refreshInBackground();
 		}
 	}
 
 	async onClose() {}
+
+	onKeyDown = (e: KeyboardEvent) => {
+		const target = e.target as HTMLElement;
+		const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+
+		if (e.key === "Escape") {
+			if (isInput) {
+				(target as HTMLInputElement).blur();
+				return;
+			}
+			if (this.detail) {
+				e.preventDefault();
+				this.closeDetail();
+			}
+			return;
+		}
+
+		if (isInput) return;
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+		if (this.gPrefixPending) {
+			this.gPrefixPending = false;
+			const tabMap: Record<string, TopTab> = { p: "pulls", i: "issues", v: "reviews", n: "inbox", o: "overview" };
+			const tab = tabMap[e.key];
+			if (tab) {
+				e.preventDefault();
+				this.detail = null;
+				this.activeTab = tab;
+				this.focusedIndex = 0;
+				this.render();
+			}
+			return;
+		}
+		if (e.key === "g" && !this.detail) {
+			this.gPrefixPending = true;
+			setTimeout(() => { this.gPrefixPending = false; }, 1200);
+			return;
+		}
+
+		if (e.key === "/") {
+			if (this.detail) return;
+			e.preventDefault();
+			const input = this.containerEl.querySelector(".octo-search-input") as HTMLInputElement | null;
+			input?.focus();
+			return;
+		}
+
+		if (e.key === "r" && !this.detail) {
+			e.preventDefault();
+			this.refresh();
+			return;
+		}
+
+		if (this.detail) return;
+
+		const rows = this.getFocusableRows();
+		if (rows.length === 0) return;
+
+		if (e.key === "j" || e.key === "ArrowDown") {
+			e.preventDefault();
+			this.focusedIndex = Math.min(rows.length - 1, this.focusedIndex + 1);
+			this.applyFocus(rows);
+		} else if (e.key === "k" || e.key === "ArrowUp") {
+			e.preventDefault();
+			this.focusedIndex = Math.max(0, this.focusedIndex - 1);
+			this.applyFocus(rows);
+		} else if (e.key === "Enter" || e.key === "o") {
+			e.preventDefault();
+			this.focusedIndex = Math.max(0, Math.min(rows.length - 1, this.focusedIndex));
+			rows[this.focusedIndex]?.click();
+		}
+	};
+
+	getFocusableRows(): HTMLElement[] {
+		return Array.from(this.containerEl.querySelectorAll(".octo-pr-row, .octo-inbox-row")) as HTMLElement[];
+	}
+
+	applyFocus(rows: HTMLElement[]) {
+		for (const r of rows) r.removeClass("octo-row-focused");
+		const row = rows[this.focusedIndex];
+		if (row) {
+			row.addClass("octo-row-focused");
+			row.scrollIntoView({ block: "nearest" });
+		}
+	}
 
 	async refreshInBackground() {
 		if (!getClient()) return;
