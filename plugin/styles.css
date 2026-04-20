@@ -2108,3 +2108,36 @@
 .octo-repo-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .octo-repo-meta { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .octo-repo-lang::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--interactive-accent); margin-right: 6px; vertical-align: middle; }
+/* --- Profile Detail View --- */
+
+.octo-profile-layout { display: flex; gap: 24px; align-items: flex-start; }
+.octo-profile-main { flex: 1; min-width: 0; }
+.octo-profile-sidebar { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 20px; }
+
+.octo-profile-header { display: flex; gap: 20px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--background-modifier-border); }
+.octo-profile-avatar { width: 96px; height: 96px; border-radius: 50%; border: 1px solid var(--background-modifier-border); flex-shrink: 0; }
+.octo-profile-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.octo-profile-name { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0; line-height: 1.2; }
+.octo-profile-login { font-size: 15px; color: var(--text-muted); font-weight: 400; }
+.octo-profile-type-pill { align-self: flex-start; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; background: var(--background-modifier-border); color: var(--text-muted); margin-top: 4px; }
+.octo-profile-bio { font-size: 13px; color: var(--text-normal); margin-top: 8px; line-height: 1.5; }
+.octo-profile-section { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+.octo-profile-section-title { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-normal); }
+.octo-profile-repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.octo-profile-repo-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); cursor: pointer; transition: background 120ms; min-width: 0; }
+.octo-profile-repo-card:hover { background: var(--background-secondary); }
+.octo-profile-repo-name { font-size: 13px; font-weight: 600; color: var(--text-accent); word-break: break-word; }
+.octo-profile-repo-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.octo-profile-repo-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: auto; }
+
+.octo-profile-sidebar-section { display: flex; flex-direction: column; gap: 8px; }
+.octo-profile-sidebar-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin: 0; }
+.octo-profile-stat-row { display: flex; justify-content: space-between; font-size: 13px; }
+.octo-profile-stat-label { color: var(--text-muted); }
+.octo-profile-stat-value { font-weight: 600; color: var(--text-normal); font-variant-numeric: tabular-nums; }
+.octo-profile-detail-row { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.octo-profile-detail-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; }
+.octo-profile-detail-value { color: var(--text-normal); }
+.octo-profile-detail-link { color: var(--text-accent); text-decoration: none; word-break: break-all; }
+.octo-profile-detail-link:hover { text-decoration: underline; }
+.octo-profile-joined { font-size: 13px; color: var(--text-normal); }

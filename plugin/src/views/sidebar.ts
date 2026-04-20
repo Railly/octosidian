@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getMyRepos, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getMyRepos, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, getProfilePageData, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -17,6 +17,7 @@ import type {
 	TimelineEvent,
 	GroupedLabelEvent,
 	ReviewThread,
+	ProfilePageData,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
@@ -35,7 +36,8 @@ type RoleFilter = "all" | "review-requested" | "authored" | "assigned" | "mentio
 type DetailState =
 	| null
 	| { type: "pr"; owner: string; repo: string; number: number; data: PullPageData | null; loading: boolean }
-	| { type: "issue"; owner: string; repo: string; number: number; data: IssuePageData | null; loading: boolean };
+	| { type: "issue"; owner: string; repo: string; number: number; data: IssuePageData | null; loading: boolean }
+	| { type: "profile"; login: string; data: ProfilePageData | null; loading: boolean };
 
 interface RepoViewState {
 	owner: string;
@@ -286,6 +288,23 @@ export class OctosidianView extends ItemView {
 			}
 		} catch {
 			new Notice("Octosidian: Failed to load issue details");
+			this.detail = null;
+			this.render();
+		}
+	}
+
+	async openProfileDetail(login: string) {
+		this.detail = { type: "profile", login, data: null, loading: true };
+		this.repoView = null;
+		this.render();
+		try {
+			const data = await getProfilePageData(login);
+			if (this.detail?.type === "profile" && this.detail.login === login) {
+				this.detail = { ...this.detail, data, loading: false };
+				this.render();
+			}
+		} catch {
+			new Notice("Octosidian: Failed to load profile");
 			this.detail = null;
 			this.render();
 		}
@@ -991,15 +1010,23 @@ export class OctosidianView extends ItemView {
 		backBtn.addEventListener("click", () => this.closeDetail());
 
 		const breadcrumb = topbar.createDiv({ cls: "octo-detail-breadcrumb" });
-		breadcrumb.createSpan({ text: `${d.owner}/${d.repo}` });
-		breadcrumb.createSpan({ cls: "octo-dot", text: " / " });
-		breadcrumb.createSpan({ text: `#${d.number}` });
+		if (d.type === "profile") {
+			breadcrumb.createSpan({ text: `@${d.login}` });
+		} else {
+			breadcrumb.createSpan({ text: `${d.owner}/${d.repo}` });
+			breadcrumb.createSpan({ cls: "octo-dot", text: " / " });
+			breadcrumb.createSpan({ text: `#${d.number}` });
+		}
 
 		const openGh = topbar.createDiv({ cls: "octo-detail-open-gh" });
 		openGh.createSpan({ text: "Open in GitHub" });
 		openGh.addEventListener("click", () => {
-			const path = d.type === "pr" ? "pull" : "issues";
-			window.open(`https://github.com/${d.owner}/${d.repo}/${path}/${d.number}`, "_blank");
+			if (d.type === "profile") {
+				window.open(`https://github.com/${d.login}`, "_blank");
+			} else {
+				const path = d.type === "pr" ? "pull" : "issues";
+				window.open(`https://github.com/${d.owner}/${d.repo}/${path}/${d.number}`, "_blank");
+			}
 		});
 
 		if (d.loading) {
@@ -1011,6 +1038,8 @@ export class OctosidianView extends ItemView {
 			this.renderPrDetail(wrapper, d.data, this.prChecks);
 		} else if (d.type === "issue" && d.data?.detail) {
 			this.renderIssueDetail(wrapper, d.data);
+		} else if (d.type === "profile") {
+			this.renderProfileDetail(wrapper, d.data);
 		} else {
 			this.renderEmptyState(wrapper, "Could not load details.");
 		}
@@ -1031,12 +1060,12 @@ export class OctosidianView extends ItemView {
 				stateBtn.disabled = true;
 				stateBtn.textContent = "...";
 				try {
-					await updatePullState(this.detail!.owner, this.detail!.repo, pr.number, pr.state === "open" ? "closed" : "open");
-					await this.openPrDetail(this.detail!.owner, this.detail!.repo, pr.number);
+					await updatePullState((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number, pr.state === "open" ? "closed" : "open");
+					await this.openPrDetail((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number);
 				} catch { new Notice("Octosidian: Failed to update PR state"); stateBtn.disabled = false; stateBtn.textContent = pr.state === "open" ? "Close PR" : "Reopen PR"; }
 			});
 
-			const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+			const repoKey = `${(this.detail as { owner: string; repo: string }).owner}/${(this.detail as { owner: string; repo: string }).repo}`;
 			const permission = this.viewerPermission[repoKey] ?? null;
 			const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
 
@@ -1059,8 +1088,8 @@ export class OctosidianView extends ItemView {
 				mergeBtn.addEventListener("click", async () => {
 					mergeBtn.disabled = true; mergeBtn.textContent = "Merging...";
 					try {
-						await mergePullRequest(this.detail!.owner, this.detail!.repo, pr.number, selectedMethod);
-						await this.openPrDetail(this.detail!.owner, this.detail!.repo, pr.number);
+						await mergePullRequest((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number, selectedMethod);
+						await this.openPrDetail((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number);
 					} catch { new Notice("Octosidian: Failed to merge PR"); mergeBtn.disabled = false; mergeBtn.textContent = "Merge"; }
 				});
 			}
@@ -1139,8 +1168,8 @@ export class OctosidianView extends ItemView {
 			if (!body) return;
 			submitBtn.disabled = true; submitBtn.textContent = "Sending...";
 			try {
-				await createComment(this.detail!.owner, this.detail!.repo, pr.number, body);
-				await this.openPrDetail(this.detail!.owner, this.detail!.repo, pr.number);
+				await createComment((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number, body);
+				await this.openPrDetail((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, pr.number);
 			} catch { new Notice("Octosidian: Failed to post comment"); submitBtn.disabled = false; submitBtn.textContent = "Comment"; }
 		});
 	}
@@ -1158,8 +1187,8 @@ export class OctosidianView extends ItemView {
 			stateBtn.addEventListener("click", async () => {
 				stateBtn.disabled = true; stateBtn.textContent = "...";
 				try {
-					await updateIssueState(this.detail!.owner, this.detail!.repo, issue.number, issue.state === "open" ? "closed" : "open");
-					await this.openIssueDetail(this.detail!.owner, this.detail!.repo, issue.number);
+					await updateIssueState((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, issue.number, issue.state === "open" ? "closed" : "open");
+					await this.openIssueDetail((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, issue.number);
 				} catch { new Notice("Octosidian: Failed to update issue state"); stateBtn.disabled = false; stateBtn.textContent = issue.state === "open" ? "Close issue" : "Reopen issue"; }
 			});
 		}
@@ -1206,8 +1235,8 @@ export class OctosidianView extends ItemView {
 			if (!body) return;
 			submitBtn.disabled = true; submitBtn.textContent = "Sending...";
 			try {
-				await createComment(this.detail!.owner, this.detail!.repo, issue.number, body);
-				await this.openIssueDetail(this.detail!.owner, this.detail!.repo, issue.number);
+				await createComment((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, issue.number, body);
+				await this.openIssueDetail((this.detail as { owner: string; repo: string }).owner, (this.detail as { owner: string; repo: string }).repo, issue.number);
 			} catch { new Notice("Octosidian: Failed to post comment"); submitBtn.disabled = false; submitBtn.textContent = "Comment"; }
 		});
 	}
@@ -1689,7 +1718,7 @@ export class OctosidianView extends ItemView {
 	}
 
 	renderMergeStatusBanner(parent: HTMLElement, pr: NonNullable<PullPageData["detail"]>) {
-		const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+		const repoKey = `${(this.detail as { owner: string; repo: string }).owner}/${(this.detail as { owner: string; repo: string }).repo}`;
 		const permission = this.viewerPermission[repoKey] ?? null;
 		const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
 
@@ -1978,6 +2007,119 @@ export class OctosidianView extends ItemView {
 				bar.createSpan({ cls: "octo-reaction-pill", text: `${emoji} ${count}` });
 			}
 		}
+	}
+
+	renderProfileDetail(parent: HTMLElement, data: ProfilePageData | null) {
+		if (!data || !data.profile) {
+			this.renderEmptyState(parent, "Could not load profile.");
+			return;
+		}
+		const { profile, repos, recentPulls, recentIssues } = data;
+
+		const content = parent.createDiv({ cls: "octo-detail-content" });
+		const layout = content.createDiv({ cls: "octo-profile-layout" });
+		const main = layout.createDiv({ cls: "octo-profile-main" });
+		const sidebar = layout.createDiv({ cls: "octo-profile-sidebar" });
+
+		const header = main.createDiv({ cls: "octo-profile-header" });
+		const avatar = header.createEl("img", {
+			cls: "octo-profile-avatar",
+			attr: { src: profile.avatarUrl, alt: profile.login, width: "96", height: "96" },
+		});
+		avatar.addEventListener("error", () => avatar.remove());
+
+		const info = header.createDiv({ cls: "octo-profile-info" });
+		info.createEl("h1", { cls: "octo-profile-name", text: profile.name ?? profile.login });
+		info.createSpan({ cls: "octo-profile-login", text: `@${profile.login}` });
+		if (profile.type !== "User") {
+			info.createSpan({ cls: "octo-profile-type-pill", text: profile.type });
+		}
+		if (profile.bio) {
+			info.createDiv({ cls: "octo-profile-bio", text: profile.bio });
+		}
+
+		if (repos.length > 0) {
+			const section = main.createDiv({ cls: "octo-profile-section" });
+			section.createEl("h2", { cls: "octo-profile-section-title", text: "Repositories" });
+			const grid = section.createDiv({ cls: "octo-profile-repo-grid" });
+			for (const repo of repos) {
+				this.renderProfileRepoCard(grid, repo);
+			}
+		}
+
+		if (recentPulls.length > 0) {
+			const section = main.createDiv({ cls: "octo-profile-section" });
+			section.createEl("h2", { cls: "octo-profile-section-title", text: "Open Pull Requests" });
+			const list = section.createDiv({ cls: "octo-pr-list" });
+			for (const pr of recentPulls) this.renderPrRow(list, pr);
+		}
+
+		if (recentIssues.length > 0) {
+			const section = main.createDiv({ cls: "octo-profile-section" });
+			section.createEl("h2", { cls: "octo-profile-section-title", text: "Open Issues" });
+			const list = section.createDiv({ cls: "octo-pr-list" });
+			for (const issue of recentIssues) this.renderIssueRow(list, issue);
+		}
+
+		const statsSection = sidebar.createDiv({ cls: "octo-profile-sidebar-section" });
+		statsSection.createEl("h3", { cls: "octo-profile-sidebar-title", text: "Stats" });
+		const statsRows: Array<[string, string | number]> = [
+			["Followers", profile.followers],
+			["Following", profile.following],
+			["Public repos", profile.publicRepos],
+		];
+		for (const [label, value] of statsRows) {
+			const row = statsSection.createDiv({ cls: "octo-profile-stat-row" });
+			row.createSpan({ cls: "octo-profile-stat-label", text: label });
+			row.createSpan({ cls: "octo-profile-stat-value", text: String(value) });
+		}
+
+		const detailsSection = sidebar.createDiv({ cls: "octo-profile-sidebar-section" });
+		detailsSection.createEl("h3", { cls: "octo-profile-sidebar-title", text: "Details" });
+		if (profile.company) {
+			const row = detailsSection.createDiv({ cls: "octo-profile-detail-row" });
+			row.createSpan({ cls: "octo-profile-detail-label", text: "Company" });
+			row.createSpan({ cls: "octo-profile-detail-value", text: profile.company });
+		}
+		if (profile.location) {
+			const row = detailsSection.createDiv({ cls: "octo-profile-detail-row" });
+			row.createSpan({ cls: "octo-profile-detail-label", text: "Location" });
+			row.createSpan({ cls: "octo-profile-detail-value", text: profile.location });
+		}
+		if (profile.email) {
+			const row = detailsSection.createDiv({ cls: "octo-profile-detail-row" });
+			row.createSpan({ cls: "octo-profile-detail-label", text: "Email" });
+			row.createSpan({ cls: "octo-profile-detail-value", text: profile.email });
+		}
+		if (profile.blog) {
+			const row = detailsSection.createDiv({ cls: "octo-profile-detail-row" });
+			row.createSpan({ cls: "octo-profile-detail-label", text: "Blog" });
+			const blog = profile.blog;
+			const link = row.createEl("a", { cls: "octo-profile-detail-link", text: blog, href: blog, attr: { target: "_blank", rel: "noopener noreferrer" } });
+			link.addEventListener("click", (e) => { e.preventDefault(); window.open(blog, "_blank"); });
+		}
+
+		const joinedSection = sidebar.createDiv({ cls: "octo-profile-sidebar-section" });
+		joinedSection.createEl("h3", { cls: "octo-profile-sidebar-title", text: "Joined" });
+		const joinedDate = new Date(profile.createdAt);
+		joinedSection.createDiv({
+			cls: "octo-profile-joined",
+			text: joinedDate.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+		});
+	}
+
+	renderProfileRepoCard(parent: HTMLElement, repo: Repository) {
+		const card = parent.createDiv({ cls: "octo-profile-repo-card" });
+		card.addEventListener("click", () => this.openRepoView(repo.owner, repo.name));
+		card.createDiv({ cls: "octo-profile-repo-name", text: repo.fullName });
+		if (repo.description) {
+			card.createDiv({ cls: "octo-profile-repo-desc", text: repo.description });
+		}
+		const meta = card.createDiv({ cls: "octo-profile-repo-meta" });
+		if (repo.language) {
+			meta.createSpan({ text: repo.language });
+		}
+		meta.createSpan({ text: `★ ${repo.stars}` });
 	}
 
 	timeAgo(dateStr: string): string {
