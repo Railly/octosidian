@@ -2073,3 +2073,26 @@
 	border-left: 2px solid var(--background-modifier-border);
 	padding-left: 12px;
 }
+
+/* --- Merge status banner (Slice C) --- */
+
+.octo-merge-banner {
+	padding: 10px 14px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 500;
+	margin: 12px 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.octo-merge-banner-ok    { background: color-mix(in srgb, #3fb950 18%, transparent); color: #3fb950; border: 1px solid color-mix(in srgb, #3fb950 40%, transparent); }
+.octo-merge-banner-error { background: color-mix(in srgb, #f85149 18%, transparent); color: #f85149; border: 1px solid color-mix(in srgb, #f85149 40%, transparent); }
+.octo-merge-banner-warn  { background: color-mix(in srgb, #d29922 18%, transparent); color: #d29922; border: 1px solid color-mix(in srgb, #d29922 40%, transparent); }
+.octo-merge-banner-neutral { background: var(--background-secondary); color: var(--text-muted); border: 1px solid var(--background-modifier-border); }
+
+.octo-merge-banner-perm {
+	font-weight: 400;
+	opacity: 0.7;
+}

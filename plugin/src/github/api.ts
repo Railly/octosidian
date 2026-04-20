@@ -406,6 +406,24 @@ export async function updateIssueState(owner: string, repo: string, issueNumber:
 	await client.rest.issues.update({ owner, repo, issue_number: issueNumber, state });
 }
 
+export async function getViewerPermission(
+	owner: string,
+	repo: string,
+	username: string,
+): Promise<"admin" | "maintain" | "write" | "triage" | "read" | "none"> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+		const p = data.permission as string;
+		if (["admin", "maintain", "write", "triage", "read", "none"].includes(p)) {
+			return p as "admin" | "maintain" | "write" | "triage" | "read" | "none";
+		}
+		return "none";
+	} catch {
+		return "none";
+	}
+}
+
 export async function mergePullRequest(owner: string, repo: string, pullNumber: number, method: "merge" | "squash" | "rebase"): Promise<void> {
 	const client = requireClient();
 	await client.rest.pulls.merge({ owner, repo, pull_number: pullNumber, merge_method: method });

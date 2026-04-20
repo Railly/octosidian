@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -80,6 +80,7 @@ export class OctosidianView extends ItemView {
 	detail: DetailState = null;
 	focusedIndex = 0;
 	gPrefixPending = false;
+	viewerPermission: Record<string, "admin" | "maintain" | "write" | "triage" | "read" | "none"> = {};
 	repoView: RepoViewState | null = null;
 	lastFetched = 0;
 	expandedRows: Set<number> = new Set();
@@ -242,7 +243,12 @@ export class OctosidianView extends ItemView {
 		this.detail = { type: "pr", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
-			const data = await getPullPageData(owner, repo, num);
+			const repoKey = `${owner}/${repo}`;
+			const viewerLogin = this.getViewerLogin();
+			const permPromise = viewerLogin && !this.viewerPermission[repoKey]
+				? getViewerPermission(owner, repo, viewerLogin).then((p) => { this.viewerPermission[repoKey] = p; })
+				: Promise.resolve();
+			const [data] = await Promise.all([getPullPageData(owner, repo, num), permPromise]);
 			if (data?.detail?.headSha) {
 				this.prChecks = await getPullChecks(owner, repo, data.detail.headSha);
 			} else {
@@ -1016,7 +1022,11 @@ export class OctosidianView extends ItemView {
 				} catch { new Notice("Octosidian: Failed to update PR state"); stateBtn.disabled = false; stateBtn.textContent = pr.state === "open" ? "Close PR" : "Reopen PR"; }
 			});
 
-			if (pr.state === "open" && !pr.isDraft) {
+			const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+			const permission = this.viewerPermission[repoKey] ?? null;
+			const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
+
+			if (pr.state === "open" && !pr.isDraft && canMerge) {
 				const mergeWrapper = actionsGroup.createDiv({ cls: "octo-merge-wrapper" });
 				const mergeBtn = mergeWrapper.createEl("button", { cls: "octo-action-btn octo-action-btn-primary", text: "Merge" });
 				const mergeArrow = mergeWrapper.createEl("button", { cls: "octo-action-btn octo-action-btn-primary octo-merge-arrow", text: "▾" });
@@ -1061,6 +1071,8 @@ export class OctosidianView extends ItemView {
 		branchInfo.createSpan({ cls: "octo-branch", text: pr.headRefName });
 		branchInfo.createSpan({ text: " → " });
 		branchInfo.createSpan({ cls: "octo-branch", text: pr.baseRefName });
+
+		this.renderMergeStatusBanner(content, pr);
 
 		if (pr.labels.length > 0) {
 			const labels = content.createDiv({ cls: "octo-detail-labels" });
@@ -1593,6 +1605,15 @@ export class OctosidianView extends ItemView {
 		empty.createDiv({ cls: "octo-empty-text", text: message });
 	}
 
+	getViewerLogin(): string | null {
+		if (!this.pullsData) return null;
+		const lists = [this.pullsData.authored, this.pullsData.reviewRequested, this.pullsData.assigned, this.pullsData.mentioned];
+		for (const list of lists) {
+			for (const pr of list) if (pr.author) return pr.author.login;
+		}
+		return null;
+	}
+
 	promptSaveSearch(scope: "pr" | "issue" | "all") {
 		const name = window.prompt("Name this saved search:", this.searchQuery.slice(0, 32));
 		if (!name) return;
@@ -1651,6 +1672,49 @@ export class OctosidianView extends ItemView {
 		}
 		this.plugin.saveCache();
 		this.render();
+	}
+
+	renderMergeStatusBanner(parent: HTMLElement, pr: NonNullable<PullPageData["detail"]>) {
+		const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+		const permission = this.viewerPermission[repoKey] ?? null;
+		const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
+
+		let statusCls = "octo-merge-banner-neutral";
+		let statusText = "";
+		if (pr.isMerged) {
+			statusCls = "octo-merge-banner-ok";
+			const by = pr.mergedBy?.login ?? "someone";
+			const when = pr.mergedAt ? this.timeAgo(pr.mergedAt) : "";
+			statusText = `Merged by ${by} · ${when}`;
+		} else if (pr.state === "closed") {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Closed without merging";
+		} else if (pr.isDraft) {
+			statusCls = "octo-merge-banner-neutral";
+			statusText = "Draft — mark as ready for review when done";
+		} else if (pr.mergeable === null) {
+			statusText = "GitHub is computing mergeability…";
+		} else if (pr.mergeable === false) {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Conflicts must be resolved";
+		} else if (pr.mergeableState === "clean") {
+			statusCls = "octo-merge-banner-ok";
+			statusText = "Ready to merge";
+		} else if (pr.mergeableState === "unstable") {
+			statusCls = "octo-merge-banner-warn";
+			statusText = "Mergeable with failing checks";
+		} else if (pr.mergeableState === "blocked") {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Merge blocked (required reviews or checks)";
+		}
+
+		if (!statusText) return;
+
+		const banner = parent.createDiv({ cls: `octo-merge-banner ${statusCls}` });
+		banner.createSpan({ text: statusText });
+		if (!pr.isMerged && pr.state === "open" && !pr.isDraft && permission !== null && !canMerge) {
+			banner.createSpan({ cls: "octo-merge-banner-perm", text: " · You don't have permission to merge." });
+		}
 	}
 
 	renderReviewThreads(parent: HTMLElement, threads: ReviewThread[]) {
