@@ -10,8 +10,16 @@ import type {
 	PullPageData,
 	IssuePageData,
 	GitHubNotification,
+	PullComment,
+	IssueComment,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
+import { textColorFor } from "../lib/contrast";
+
+function labelAttrs(color: string): { style: string } {
+	const textColor = textColorFor(color) === "dark" ? "#000000" : "#ffffff";
+	return { style: `--label-color: #${color}; --label-text: ${textColor}` };
+}
 
 export const OCTO_VIEW_TYPE = "octo-view";
 
@@ -621,7 +629,7 @@ export class OctosidianView extends ItemView {
 		if (pr.labels.length > 0) {
 			const labels = info.createDiv({ cls: "octo-pr-labels" });
 			for (const label of pr.labels.slice(0, 4)) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -775,7 +783,7 @@ export class OctosidianView extends ItemView {
 		if (issue.labels.length > 0) {
 			const labels = info.createDiv({ cls: "octo-pr-labels" });
 			for (const label of issue.labels.slice(0, 4)) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -941,7 +949,7 @@ export class OctosidianView extends ItemView {
 		if (pr.labels.length > 0) {
 			const labels = content.createDiv({ cls: "octo-detail-labels" });
 			for (const label of pr.labels) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -989,6 +997,7 @@ export class OctosidianView extends ItemView {
 				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
 				const cBody = c.createDiv({ cls: "octo-comment-body" });
 				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
+				this.renderReactions(c, comment);
 			}
 		}
 
@@ -1038,7 +1047,7 @@ export class OctosidianView extends ItemView {
 		if (issue.labels.length > 0) {
 			const labels = content.createDiv({ cls: "octo-detail-labels" });
 			for (const label of issue.labels) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -1071,6 +1080,7 @@ export class OctosidianView extends ItemView {
 				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
 				const cBody = c.createDiv({ cls: "octo-comment-body" });
 				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
+				this.renderReactions(c, comment);
 			}
 		}
 
@@ -1459,6 +1469,21 @@ export class OctosidianView extends ItemView {
 		const iconEl = empty.createDiv({ cls: "octo-empty-icon" });
 		iconEl.innerHTML = ICONS.prOpen;
 		empty.createDiv({ cls: "octo-empty-text", text: message });
+	}
+
+	renderReactions(parent: HTMLElement, comment: PullComment | IssueComment) {
+		if (!comment.reactions?.total) return;
+		const EMOJI_MAP: Record<string, string> = {
+			"+1": "👍", "-1": "👎", laugh: "😄", hooray: "🎉",
+			confused: "😕", heart: "❤️", rocket: "🚀", eyes: "👀",
+		};
+		const bar = parent.createDiv({ cls: "octo-reactions" });
+		for (const [key, emoji] of Object.entries(EMOJI_MAP)) {
+			const count = comment.reactions.byType[key as keyof typeof comment.reactions.byType];
+			if (count && count > 0) {
+				bar.createSpan({ cls: "octo-reaction-pill", text: `${emoji} ${count}` });
+			}
+		}
 	}
 
 	timeAgo(dateStr: string): string {

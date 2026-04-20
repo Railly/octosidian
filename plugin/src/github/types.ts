@@ -105,11 +105,17 @@ export type MyIssuesResult = {
 	timedOut?: boolean;
 };
 
+export type CommentReactions = {
+	total: number;
+	byType: Partial<Record<'+1' | '-1' | 'laugh' | 'hooray' | 'confused' | 'heart' | 'rocket' | 'eyes', number>>;
+};
+
 export type PullComment = {
 	id: number;
 	body: string;
 	createdAt: string;
 	author: GitHubActor | null;
+	reactions?: CommentReactions;
 };
 
 export type IssueComment = {
@@ -117,6 +123,7 @@ export type IssueComment = {
 	body: string;
 	createdAt: string;
 	author: GitHubActor | null;
+	reactions?: CommentReactions;
 };
 
 export type TimelineEvent = {

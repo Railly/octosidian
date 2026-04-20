@@ -15,6 +15,7 @@ import type {
 	IssueComment,
 	TimelineEvent,
 	GitHubNotification,
+	CommentReactions,
 } from "./types";
 
 function requireClient() {
@@ -54,6 +55,18 @@ function mapRepo(raw: { name: string; owner: { login: string }; full_name: strin
 		}
 	}
 	return { name: "unknown", owner: "unknown", fullName: "unknown", url: "" };
+}
+
+function mapReactions(raw: Record<string, unknown> | null | undefined): CommentReactions | undefined {
+	if (!raw) return undefined;
+	const keys = ['+1', '-1', 'laugh', 'hooray', 'confused', 'heart', 'rocket', 'eyes'] as const;
+	const byType: Partial<Record<typeof keys[number], number>> = {};
+	for (const k of keys) {
+		const v = raw[k];
+		if (typeof v === 'number' && v > 0) byType[k] = v;
+	}
+	const total = Object.values(byType).reduce((a, b) => a + b, 0);
+	return total > 0 ? { total, byType } : undefined;
 }
 
 function mapLabels(raw: Array<{ name?: string; color?: string; description?: string | null }>): GitHubLabel[] {
@@ -266,6 +279,7 @@ export async function getPullPageData(
 		body: c.body ?? "",
 		createdAt: c.created_at,
 		author: mapActor(c.user as any),
+		reactions: mapReactions(c.reactions as Record<string, unknown> | null),
 	}));
 
 	const events: TimelineEvent[] = eventsRes.data.map((e: any) => ({
@@ -307,6 +321,7 @@ export async function getIssuePageData(
 		body: c.body ?? "",
 		createdAt: c.created_at,
 		author: mapActor(c.user as any),
+		reactions: mapReactions(c.reactions as Record<string, unknown> | null),
 	}));
 
 	const events: TimelineEvent[] = eventsRes.data.map((e: any) => ({

@@ -425,9 +425,13 @@
 	font-size: 11px;
 	font-weight: 500;
 	line-height: 18px;
-	border: 1px solid color-mix(in srgb, var(--label-color) 40%, transparent);
-	background: color-mix(in srgb, var(--label-color) 12%, transparent);
-	color: color-mix(in srgb, var(--label-color) 85%, var(--text-normal));
+	border: 1px solid color-mix(in srgb, var(--label-color) 55%, transparent);
+	background: color-mix(in srgb, var(--label-color) 18%, transparent);
+	color: color-mix(in srgb, var(--label-color) 70%, var(--text-normal));
+}
+
+.theme-dark .octo-label {
+	color: color-mix(in srgb, var(--label-color) 80%, white 20%);
 }
 
 /* Comments always visible */
@@ -1788,4 +1792,27 @@
 .octo-readme-body h1:first-child,
 .octo-readme-body h2:first-child {
 	margin-top: 0 !important;
+}
+
+/* --- Reactions (Slice E) --- */
+
+.octo-reactions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.octo-reaction-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 7px;
+	border-radius: 10px;
+	font-size: 12px;
+	background: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	cursor: default;
+	user-select: none;
 }
