@@ -2141,3 +2141,116 @@
 .octo-profile-detail-link { color: var(--text-accent); text-decoration: none; word-break: break-all; }
 .octo-profile-detail-link:hover { text-decoration: underline; }
 .octo-profile-joined { font-size: 13px; color: var(--text-normal); }
+
+/* --- Internal Tabs Strip --- */
+
+.octo-tabs-bar {
+	display: flex;
+	gap: 2px;
+	padding: 4px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	overflow-x: auto;
+	position: sticky;
+	top: 41px;
+	z-index: 15;
+	background: var(--background-primary);
+	scrollbar-width: none;
+}
+
+.octo-tabs-bar::-webkit-scrollbar {
+	display: none;
+}
+
+.octo-tab-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+	max-width: 220px;
+	transition: background 100ms;
+}
+
+.octo-tab-chip-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.octo-tab-chip-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.octo-tab-chip:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.octo-tab-chip.octo-tab-active {
+	background: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+.octo-tab-chip-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 140px;
+}
+
+.octo-tab-chip-number {
+	font-variant-numeric: tabular-nums;
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+.octo-tab-chip-close {
+	margin-left: 4px;
+	display: flex;
+	align-items: center;
+	opacity: 0;
+	transition: opacity 100ms;
+}
+
+.octo-tab-chip:hover .octo-tab-chip-close,
+.octo-tab-chip.octo-tab-active .octo-tab-chip-close {
+	opacity: 0.6;
+}
+
+.octo-tab-chip-close:hover {
+	opacity: 1;
+}
+
+.octo-tab-chip-close svg {
+	width: 10px;
+	height: 10px;
+}
+
+/* --- Clickable usernames --- */
+
+.octo-clickable-user {
+	cursor: pointer;
+	border-radius: 4px;
+	padding: 1px 4px;
+	margin: -1px -4px;
+	transition: background 100ms;
+}
+
+.octo-clickable-user:hover {
+	background: var(--background-modifier-hover);
+}
+
+.octo-author-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.octo-repo-owner-inline {
+	cursor: pointer;
+}

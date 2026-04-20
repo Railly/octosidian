@@ -21,7 +21,7 @@ import type {
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
-import { isUnread, seenKey } from "../cache";
+import { isUnread, seenKey, type OpenDetailTab } from "../cache";
 
 function labelAttrs(color: string): { style: string } {
 	const textColor = textColorFor(color) === "dark" ? "#000000" : "#ffffff";
@@ -90,6 +90,7 @@ export class OctosidianView extends ItemView {
 	gPrefixPending = false;
 	viewerPermission: Record<string, "admin" | "maintain" | "write" | "triage" | "read" | "none"> = {};
 	repoView: RepoViewState | null = null;
+	activeTabId: string | null = null;
 	lastFetched = 0;
 	expandedRows: Set<number> = new Set();
 	expandedCache: Map<number, PullPageData | IssuePageData> = new Map();
@@ -251,6 +252,15 @@ export class OctosidianView extends ItemView {
 
 	async openPrDetail(owner: string, repo: string, num: number) {
 		this.markSeenByNumber("pr", owner, repo, num);
+		const prList = this.pullsData ? this.pullsData.authored.concat(this.pullsData.reviewRequested ?? [], this.pullsData.assigned ?? [], this.pullsData.mentioned ?? []) : [];
+		const pr = prList.find((p) => p.repository.owner === owner && p.repository.name === repo && p.number === num);
+		this.pushOrUpdateTab({
+			id: this.tabIdFor("pr", owner, repo, num),
+			type: "pr",
+			title: pr?.title ?? `#${num}`,
+			iconColor: pr ? (pr.isDraft ? "octo-icon-draft" : pr.mergedAt ? "octo-icon-merged" : pr.state === "closed" ? "octo-icon-closed" : "octo-icon-open") : "octo-icon-open",
+			owner, repo, number: num,
+		});
 		this.detail = { type: "pr", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
@@ -278,6 +288,15 @@ export class OctosidianView extends ItemView {
 
 	async openIssueDetail(owner: string, repo: string, num: number) {
 		this.markSeenByNumber("issue", owner, repo, num);
+		const issueList = this.issuesData ? [...this.issuesData.assigned, ...this.issuesData.authored, ...this.issuesData.mentioned] : [];
+		const issue = issueList.find((i) => i.repository.owner === owner && i.repository.name === repo && i.number === num);
+		this.pushOrUpdateTab({
+			id: this.tabIdFor("issue", owner, repo, num),
+			type: "issue",
+			title: issue?.title ?? `#${num}`,
+			iconColor: issue?.state === "closed" ? "octo-icon-closed" : "octo-icon-open",
+			owner, repo, number: num,
+		});
 		this.detail = { type: "issue", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
@@ -294,6 +313,13 @@ export class OctosidianView extends ItemView {
 	}
 
 	async openProfileDetail(login: string) {
+		this.pushOrUpdateTab({
+			id: this.tabIdFor("profile", login, ""),
+			type: "profile",
+			title: login,
+			iconColor: "",
+			login,
+		});
 		this.detail = { type: "profile", login, data: null, loading: true };
 		this.repoView = null;
 		this.render();
@@ -316,6 +342,13 @@ export class OctosidianView extends ItemView {
 	}
 
 	async openRepoView(owner: string, repo: string) {
+		this.pushOrUpdateTab({
+			id: this.tabIdFor("repo", owner, repo),
+			type: "repo",
+			title: `${owner}/${repo}`,
+			iconColor: "",
+			owner, repo,
+		});
 		this.repoView = { owner, repo, tree: null, readme: null, overview: null, recentPrs: [], recentIssues: [], loading: true, treePath: "", fileContent: null, filePath: null };
 		this.detail = null;
 		this.render();
@@ -405,6 +438,7 @@ export class OctosidianView extends ItemView {
 		}
 
 		this.renderTopNav(container);
+		this.renderOpenTabsBar(container);
 
 		const body = container.createDiv({ cls: "octo-body" });
 
@@ -478,6 +512,7 @@ export class OctosidianView extends ItemView {
 				this.searchQuery = "";
 				this.detail = null;
 				this.repoView = null;
+				this.activeTabId = null;
 				this.render();
 			});
 		}
@@ -771,9 +806,12 @@ export class OctosidianView extends ItemView {
 		meta.createSpan({ text: ` #${pr.number}` });
 		if (pr.author) {
 			meta.createSpan({ cls: "octo-dot", text: " · " });
-			const avatar = meta.createEl("img", { cls: "octo-avatar", attr: { src: pr.author.avatarUrl, alt: pr.author.login, width: "14", height: "14" } });
+			const authorLogin = pr.author.login;
+			const authorChip = meta.createSpan({ cls: "octo-author-chip" });
+			const avatar = authorChip.createEl("img", { cls: "octo-avatar", attr: { src: pr.author.avatarUrl, alt: authorLogin, width: "14", height: "14" } });
 			avatar.addEventListener("error", () => avatar.remove());
-			meta.createSpan({ text: ` ${pr.author.login}` });
+			authorChip.createSpan({ text: ` ${authorLogin}` });
+			this.attachProfileClick(authorChip, authorLogin);
 		}
 		meta.createSpan({ cls: "octo-dot", text: " · " });
 		meta.createSpan({ text: this.timeAgo(pr.updatedAt) });
@@ -928,9 +966,12 @@ export class OctosidianView extends ItemView {
 		meta.createSpan({ text: ` #${issue.number}` });
 		if (issue.author) {
 			meta.createSpan({ cls: "octo-dot", text: " · " });
-			const avatar = meta.createEl("img", { cls: "octo-avatar", attr: { src: issue.author.avatarUrl, alt: issue.author.login, width: "14", height: "14" } });
+			const authorLogin = issue.author.login;
+			const authorChip = meta.createSpan({ cls: "octo-author-chip" });
+			const avatar = authorChip.createEl("img", { cls: "octo-avatar", attr: { src: issue.author.avatarUrl, alt: authorLogin, width: "14", height: "14" } });
 			avatar.addEventListener("error", () => avatar.remove());
-			meta.createSpan({ text: ` ${issue.author.login}` });
+			authorChip.createSpan({ text: ` ${authorLogin}` });
+			this.attachProfileClick(authorChip, authorLogin);
 		}
 		meta.createSpan({ cls: "octo-dot", text: " · " });
 		meta.createSpan({ text: this.timeAgo(issue.updatedAt) });
@@ -1128,9 +1169,11 @@ export class OctosidianView extends ItemView {
 			const reviewers = content.createDiv({ cls: "octo-detail-assignees" });
 			reviewers.createSpan({ cls: "octo-detail-section-label", text: "Reviewers: " });
 			for (const r of pr.requestedReviewers) {
-				const avatar = reviewers.createEl("img", { cls: "octo-avatar", attr: { src: r.avatarUrl, alt: r.login, width: "14", height: "14" } });
+				const chip = reviewers.createSpan({ cls: "octo-author-chip" });
+				const avatar = chip.createEl("img", { cls: "octo-avatar", attr: { src: r.avatarUrl, alt: r.login, width: "14", height: "14" } });
 				avatar.addEventListener("error", () => avatar.remove());
-				reviewers.createSpan({ text: ` ${r.login} ` });
+				chip.createSpan({ text: ` ${r.login} ` });
+				this.attachProfileClick(chip, r.login);
 			}
 		}
 
@@ -1214,9 +1257,11 @@ export class OctosidianView extends ItemView {
 			const assignees = content.createDiv({ cls: "octo-detail-assignees" });
 			assignees.createSpan({ cls: "octo-detail-section-label", text: "Assignees: " });
 			for (const a of issue.assignees) {
-				const avatar = assignees.createEl("img", { cls: "octo-avatar", attr: { src: a.avatarUrl, alt: a.login, width: "14", height: "14" } });
+				const chip = assignees.createSpan({ cls: "octo-author-chip" });
+				const avatar = chip.createEl("img", { cls: "octo-avatar", attr: { src: a.avatarUrl, alt: a.login, width: "14", height: "14" } });
 				avatar.addEventListener("error", () => avatar.remove());
-				assignees.createSpan({ text: ` ${a.login} ` });
+				chip.createSpan({ text: ` ${a.login} ` });
+				this.attachProfileClick(chip, a.login);
 			}
 		}
 
@@ -1254,7 +1299,8 @@ export class OctosidianView extends ItemView {
 		backBtn.addEventListener("click", () => this.closeRepoView());
 
 		const repoName = topbar.createDiv({ cls: "octo-repo-header-name" });
-		repoName.createSpan({ cls: "octo-repo-owner", text: rv.owner });
+		const ownerSpan = repoName.createSpan({ cls: "octo-repo-owner", text: rv.owner });
+		this.attachProfileClick(ownerSpan, rv.owner);
 		repoName.createSpan({ text: " / " });
 		repoName.createSpan({ cls: "octo-repo-name-bold", text: rv.repo });
 
@@ -1842,12 +1888,15 @@ export class OctosidianView extends ItemView {
 		if (isReply) commentEl.addClass("octo-review-reply");
 		const commentHeader = commentEl.createDiv({ cls: "octo-comment-header" });
 		if (comment.author) {
+			const authorLogin = comment.author.login;
 			const avatar = commentHeader.createEl("img", {
 				cls: "octo-comment-avatar",
-				attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" },
+				attr: { src: comment.author.avatarUrl, alt: authorLogin, width: "20", height: "20" },
 			});
 			avatar.addEventListener("error", () => avatar.remove());
-			commentHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+			this.attachProfileClick(avatar, authorLogin);
+			const authorSpan = commentHeader.createSpan({ cls: "octo-comment-author", text: authorLogin });
+			this.attachProfileClick(authorSpan, authorLogin);
 		}
 		commentHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
 		const commentBody = commentEl.createDiv({ cls: "octo-comment-body" });
@@ -1931,9 +1980,12 @@ export class OctosidianView extends ItemView {
 				const c = item.createDiv({ cls: "octo-comment" });
 				const cHeader = c.createDiv({ cls: "octo-comment-header" });
 				if (comment.author) {
-					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
+					const authorLogin = comment.author.login;
+					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: authorLogin, width: "20", height: "20" } });
 					avatar.addEventListener("error", () => avatar.remove());
-					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+					this.attachProfileClick(avatar, authorLogin);
+					const authorSpan = cHeader.createSpan({ cls: "octo-comment-author", text: authorLogin });
+					this.attachProfileClick(authorSpan, authorLogin);
 				}
 				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
 				const cBody = c.createDiv({ cls: "octo-comment-body" });
@@ -2122,6 +2174,85 @@ export class OctosidianView extends ItemView {
 		meta.createSpan({ text: `★ ${repo.stars}` });
 	}
 
+	// --- Internal Tab Strip ---
+
+	private tabIdFor(type: "pr" | "issue" | "repo" | "profile", ownerOrLogin: string, repoOrEmpty: string, number?: number): string {
+		if (type === "profile") return `profile:${ownerOrLogin}`;
+		if (type === "repo") return `repo:${ownerOrLogin}/${repoOrEmpty}`;
+		return `${type}:${ownerOrLogin}/${repoOrEmpty}/${number}`;
+	}
+
+	pushOrUpdateTab(tab: OpenDetailTab) {
+		const tabs = this.plugin.cache.openTabs ?? [];
+		const existing = tabs.findIndex((t) => t.id === tab.id);
+		let next: OpenDetailTab[];
+		if (existing >= 0) {
+			next = tabs.map((t, i) => (i === existing ? { ...t, ...tab } : t));
+		} else {
+			next = [...tabs, tab];
+			if (next.length > 15) next = next.slice(next.length - 15);
+		}
+		this.plugin.cache.openTabs = next;
+		this.activeTabId = tab.id;
+		this.plugin.saveCache();
+	}
+
+	closeTab(id: string) {
+		const tabs = this.plugin.cache.openTabs ?? [];
+		this.plugin.cache.openTabs = tabs.filter((t) => t.id !== id);
+		if (this.activeTabId === id) {
+			this.activeTabId = null;
+			this.detail = null;
+			this.repoView = null;
+		}
+		this.plugin.saveCache();
+		this.render();
+	}
+
+	activateTab(tab: OpenDetailTab) {
+		this.activeTabId = tab.id;
+		if (tab.type === "pr" && tab.owner && tab.repo && tab.number != null) {
+			this.openPrDetail(tab.owner, tab.repo, tab.number);
+		} else if (tab.type === "issue" && tab.owner && tab.repo && tab.number != null) {
+			this.openIssueDetail(tab.owner, tab.repo, tab.number);
+		} else if (tab.type === "repo" && tab.owner && tab.repo) {
+			this.openRepoView(tab.owner, tab.repo);
+		} else if (tab.type === "profile" && tab.login) {
+			this.openProfileDetail(tab.login);
+		}
+	}
+
+	renderOpenTabsBar(parent: HTMLElement) {
+		const tabs = this.plugin.cache.openTabs ?? [];
+		if (tabs.length === 0) return;
+		const bar = parent.createDiv({ cls: "octo-tabs-bar" });
+		for (const tab of tabs) {
+			const chip = bar.createDiv({ cls: `octo-tab-chip ${this.activeTabId === tab.id ? "octo-tab-active" : ""}` });
+			const iconEl = chip.createSpan({ cls: "octo-tab-chip-icon" });
+			if (tab.avatarUrl) {
+				const img = iconEl.createEl("img", { cls: "octo-avatar", attr: { src: tab.avatarUrl, width: "14", height: "14" } });
+				img.addEventListener("error", () => img.remove());
+			} else {
+				iconEl.innerHTML = tab.type === "pr" ? ICONS.prOpen : tab.type === "issue" ? ICONS.issueOpen : tab.type === "repo" ? ICONS.repo : ICONS.eye;
+				if (tab.iconColor) iconEl.addClass(tab.iconColor);
+			}
+			chip.createSpan({ cls: "octo-tab-chip-title", text: tab.title });
+			if (tab.number != null) chip.createSpan({ cls: "octo-tab-chip-number", text: `#${tab.number}` });
+			const closeBtn = chip.createSpan({ cls: "octo-tab-chip-close" });
+			closeBtn.innerHTML = ICONS.close;
+			closeBtn.addEventListener("click", (e) => { e.stopPropagation(); this.closeTab(tab.id); });
+			chip.addEventListener("click", () => this.activateTab(tab));
+		}
+	}
+
+	attachProfileClick(el: HTMLElement, login: string) {
+		el.addClass("octo-clickable-user");
+		el.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.openProfileDetail(login);
+		});
+	}
+
 	timeAgo(dateStr: string): string {
 		const now = Date.now();
 		const then = new Date(dateStr).getTime();
@@ -2213,7 +2344,10 @@ export class OctosidianView extends ItemView {
 		const left = row.createDiv({ cls: "octo-repo-left" });
 		const visIcon = left.createSpan({ cls: "octo-repo-vis" });
 		visIcon.innerHTML = r.isPrivate ? ICONS.lock : ICONS.repo;
-		left.createSpan({ cls: "octo-repo-name", text: r.fullName });
+		const nameWrap = left.createSpan({ cls: "octo-repo-name" });
+		const ownerSpan = nameWrap.createSpan({ cls: "octo-repo-owner-inline", text: r.owner });
+		this.attachProfileClick(ownerSpan, r.owner);
+		nameWrap.createSpan({ text: `/${r.name}` });
 		if (r.isFork) {
 			left.createSpan({ cls: "octo-repo-tag", text: "fork" });
 		}
