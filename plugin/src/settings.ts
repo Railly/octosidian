@@ -2,14 +2,23 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type OctosidianPlugin from "./main";
 import { testConnection } from "./github/client";
 
+export interface SavedSearch {
+	id: string;
+	name: string;
+	query: string;
+	scope: "pr" | "issue" | "all";
+}
+
 export interface OctosidianSettings {
 	token: string;
 	pollingInterval: number;
+	savedSearches: SavedSearch[];
 }
 
 export const DEFAULT_SETTINGS: OctosidianSettings = {
 	token: "",
 	pollingInterval: 60000,
+	savedSearches: [],
 };
 
 export class OctosidianSettingTab extends PluginSettingTab {

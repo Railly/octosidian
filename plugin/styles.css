@@ -1845,3 +1845,52 @@
 	font-weight: 500;
 	width: auto;
 }
+
+/* --- Saved searches --- */
+
+.octo-saved-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.octo-saved-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 12px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	font-size: 11px;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: all 100ms;
+}
+
+.octo-saved-chip:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border-hover);
+}
+
+.octo-saved-chip-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.octo-saved-chip-del {
+	font-size: 13px;
+	line-height: 1;
+	opacity: 0.5;
+	padding: 0 2px;
+}
+
+.octo-saved-chip-del:hover {
+	opacity: 1;
+}
+
+.octo-save-search-btn {
+	font-weight: 500;
+}

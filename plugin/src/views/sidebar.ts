@@ -1337,6 +1337,31 @@ export class OctosidianView extends ItemView {
 
 	renderSearchBar(parent: HTMLElement, mode: "pr" | "issue" = "pr") {
 		const toolbar = parent.createDiv({ cls: "octo-toolbar" });
+
+		const saved = this.plugin.settings.savedSearches ?? [];
+		const scope: "pr" | "issue" | "all" = mode;
+		const relevant = saved.filter((s) => s.scope === "all" || s.scope === scope);
+		if (relevant.length > 0) {
+			const chipsRow = toolbar.createDiv({ cls: "octo-saved-chips" });
+			for (const s of relevant) {
+				const chip = chipsRow.createSpan({
+					cls: `octo-saved-chip${this.searchQuery === s.query ? " octo-saved-chip-active" : ""}`,
+					text: s.name,
+				});
+				chip.addEventListener("click", () => {
+					this.searchQuery = this.searchQuery === s.query ? "" : s.query;
+					this.render();
+				});
+				const del = chip.createSpan({ cls: "octo-saved-chip-del", text: "×", attr: { "aria-label": "Delete saved search" } });
+				del.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.plugin.settings.savedSearches = (this.plugin.settings.savedSearches ?? []).filter((x) => x.id !== s.id);
+					this.plugin.saveSettings();
+					this.render();
+				});
+			}
+		}
+
 		const row = toolbar.createDiv({ cls: "octo-search-row" });
 
 		const searchBox = row.createDiv({ cls: "octo-search-box" });
@@ -1353,6 +1378,15 @@ export class OctosidianView extends ItemView {
 			const newInput = this.containerEl.querySelector(".octo-search-input") as HTMLInputElement;
 			if (newInput) { newInput.focus(); newInput.setSelectionRange(this.searchQuery.length, this.searchQuery.length); }
 		});
+
+		if (this.searchQuery.trim().length > 0) {
+			const saveBtn = row.createEl("button", {
+				cls: "octo-sort-btn octo-save-search-btn",
+				text: "Save",
+				attr: { "aria-label": "Save this search" },
+			});
+			saveBtn.addEventListener("click", () => this.promptSaveSearch(mode));
+		}
 
 		const sortBtn = row.createEl("button", { cls: "octo-sort-btn", attr: { "aria-label": "Sort" } });
 		const sortLabels: Record<string, string> = { updated: "Recently updated", newest: "Newest", oldest: "Oldest", comments: "Most comments" };
@@ -1493,6 +1527,18 @@ export class OctosidianView extends ItemView {
 		const iconEl = empty.createDiv({ cls: "octo-empty-icon" });
 		iconEl.innerHTML = ICONS.prOpen;
 		empty.createDiv({ cls: "octo-empty-text", text: message });
+	}
+
+	promptSaveSearch(scope: "pr" | "issue" | "all") {
+		const name = window.prompt("Name this saved search:", this.searchQuery.slice(0, 32));
+		if (!name) return;
+		const id = `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+		this.plugin.settings.savedSearches = [
+			...(this.plugin.settings.savedSearches ?? []),
+			{ id, name: name.trim(), query: this.searchQuery, scope },
+		];
+		this.plugin.saveSettings();
+		this.render();
 	}
 
 	markSeenByNumber(kind: "pr" | "issue", owner: string, repo: string, num: number) {
