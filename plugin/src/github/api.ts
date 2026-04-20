@@ -15,6 +15,9 @@ import type {
 	IssueComment,
 	TimelineEvent,
 	GitHubNotification,
+	CommentReactions,
+	ReviewComment,
+	ReviewThread,
 } from "./types";
 
 function requireClient() {
@@ -54,6 +57,18 @@ function mapRepo(raw: { name: string; owner: { login: string }; full_name: strin
 		}
 	}
 	return { name: "unknown", owner: "unknown", fullName: "unknown", url: "" };
+}
+
+function mapReactions(raw: Record<string, unknown> | null | undefined): CommentReactions | undefined {
+	if (!raw) return undefined;
+	const keys = ['+1', '-1', 'laugh', 'hooray', 'confused', 'heart', 'rocket', 'eyes'] as const;
+	const byType: Partial<Record<typeof keys[number], number>> = {};
+	for (const k of keys) {
+		const v = raw[k];
+		if (typeof v === 'number' && v > 0) byType[k] = v;
+	}
+	const total = Object.values(byType).reduce((a, b) => a + b, 0);
+	return total > 0 ? { total, byType } : undefined;
 }
 
 function mapLabels(raw: Array<{ name?: string; color?: string; description?: string | null }>): GitHubLabel[] {
@@ -266,6 +281,7 @@ export async function getPullPageData(
 		body: c.body ?? "",
 		createdAt: c.created_at,
 		author: mapActor(c.user as any),
+		reactions: mapReactions(c.reactions as Record<string, unknown> | null),
 	}));
 
 	const events: TimelineEvent[] = eventsRes.data.map((e: any) => ({
@@ -279,9 +295,59 @@ export async function getPullPageData(
 		rename: e.rename ?? undefined,
 		milestone: e.milestone ?? undefined,
 		reviewState: e.state ?? undefined,
+		stateReason: e.state_reason ?? null,
 	}));
 
-	return { detail, comments, events };
+	let reviewCommentsRes: { data: any[] } = { data: [] };
+	try {
+		reviewCommentsRes = await client.rest.pulls.listReviewComments({
+			owner, repo, pull_number: pullNumber, per_page: 100,
+		});
+	} catch { /* 403 fallback */ }
+
+	const rawReviewComments: ReviewComment[] = reviewCommentsRes.data.map((c) => ({
+		id: c.id,
+		inReplyToId: c.in_reply_to_id ?? null,
+		path: c.path,
+		line: c.line ?? null,
+		originalLine: c.original_line ?? null,
+		side: (c.side === "LEFT" ? "LEFT" : "RIGHT") as "LEFT" | "RIGHT",
+		diffHunk: c.diff_hunk ?? "",
+		body: c.body ?? "",
+		createdAt: c.created_at,
+		author: mapActor(c.user as any),
+	}));
+
+	const reviewThreads = buildReviewThreads(rawReviewComments);
+
+	return { detail, comments, events, reviewThreads };
+}
+
+function buildReviewThreads(comments: ReviewComment[]): ReviewThread[] {
+	const roots = comments.filter((c) => c.inReplyToId === null);
+	const replyMap = new Map<number, ReviewComment[]>();
+	for (const c of comments) {
+		if (c.inReplyToId !== null) {
+			const arr = replyMap.get(c.inReplyToId) ?? [];
+			arr.push(c);
+			replyMap.set(c.inReplyToId, arr);
+		}
+	}
+	return roots.map((root) => {
+		const replies = (replyMap.get(root.id) ?? []).sort(
+			(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+		);
+		return {
+			id: root.id,
+			path: root.path,
+			line: root.line ?? root.originalLine,
+			side: root.side,
+			diffHunk: root.diffHunk,
+			isResolved: false, // TODO: REST API does not expose thread resolution; GraphQL reviewThreads.isResolved would provide it
+			root,
+			replies,
+		};
+	});
 }
 
 export async function getIssuePageData(
@@ -307,6 +373,7 @@ export async function getIssuePageData(
 		body: c.body ?? "",
 		createdAt: c.created_at,
 		author: mapActor(c.user as any),
+		reactions: mapReactions(c.reactions as Record<string, unknown> | null),
 	}));
 
 	const events: TimelineEvent[] = eventsRes.data.map((e: any) => ({
@@ -318,6 +385,7 @@ export async function getIssuePageData(
 		assignee: e.assignee ? mapActor(e.assignee) : undefined,
 		rename: e.rename ?? undefined,
 		milestone: e.milestone ?? undefined,
+		stateReason: e.state_reason ?? null,
 	}));
 
 	return { detail, comments, events };
@@ -336,6 +404,24 @@ export async function updatePullState(owner: string, repo: string, pullNumber: n
 export async function updateIssueState(owner: string, repo: string, issueNumber: number, state: "open" | "closed"): Promise<void> {
 	const client = requireClient();
 	await client.rest.issues.update({ owner, repo, issue_number: issueNumber, state });
+}
+
+export async function getViewerPermission(
+	owner: string,
+	repo: string,
+	username: string,
+): Promise<"admin" | "maintain" | "write" | "triage" | "read" | "none"> {
+	const client = requireClient();
+	try {
+		const { data } = await client.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+		const p = data.permission as string;
+		if (["admin", "maintain", "write", "triage", "read", "none"].includes(p)) {
+			return p as "admin" | "maintain" | "write" | "triage" | "read" | "none";
+		}
+		return "none";
+	} catch {
+		return "none";
+	}
 }
 
 export async function mergePullRequest(owner: string, repo: string, pullNumber: number, method: "merge" | "squash" | "rebase"): Promise<void> {

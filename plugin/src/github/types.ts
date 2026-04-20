@@ -105,11 +105,17 @@ export type MyIssuesResult = {
 	timedOut?: boolean;
 };
 
+export type CommentReactions = {
+	total: number;
+	byType: Partial<Record<'+1' | '-1' | 'laugh' | 'hooray' | 'confused' | 'heart' | 'rocket' | 'eyes', number>>;
+};
+
 export type PullComment = {
 	id: number;
 	body: string;
 	createdAt: string;
 	author: GitHubActor | null;
+	reactions?: CommentReactions;
 };
 
 export type IssueComment = {
@@ -117,6 +123,7 @@ export type IssueComment = {
 	body: string;
 	createdAt: string;
 	author: GitHubActor | null;
+	reactions?: CommentReactions;
 };
 
 export type TimelineEvent = {
@@ -139,13 +146,47 @@ export type TimelineEvent = {
 	} | null;
 	milestone?: { title: string } | null;
 	reviewState?: string;
+	stateReason?: string | null;
 	body?: string;
+};
+
+export type GroupedLabelEvent = {
+	kind: "grouped-label";
+	actor: GitHubActor | null;
+	createdAt: string;
+	added: Array<{ name: string; color: string }>;
+	removed: Array<{ name: string; color: string }>;
+};
+
+export type ReviewComment = {
+	id: number;
+	inReplyToId: number | null;
+	path: string;
+	line: number | null;
+	originalLine: number | null;
+	side: "LEFT" | "RIGHT";
+	diffHunk: string;
+	body: string;
+	createdAt: string;
+	author: GitHubActor | null;
+};
+
+export type ReviewThread = {
+	id: number;
+	path: string;
+	line: number | null;
+	side: "LEFT" | "RIGHT";
+	diffHunk: string;
+	isResolved: boolean;
+	root: ReviewComment;
+	replies: ReviewComment[];
 };
 
 export type PullPageData = {
 	detail: PullDetail | null;
 	comments: PullComment[];
 	events: TimelineEvent[];
+	reviewThreads?: ReviewThread[];
 };
 
 export type IssuePageData = {

@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -10,8 +10,20 @@ import type {
 	PullPageData,
 	IssuePageData,
 	GitHubNotification,
+	PullComment,
+	IssueComment,
+	TimelineEvent,
+	GroupedLabelEvent,
+	ReviewThread,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
+import { textColorFor } from "../lib/contrast";
+import { isUnread, seenKey } from "../cache";
+
+function labelAttrs(color: string): { style: string } {
+	const textColor = textColorFor(color) === "dark" ? "#000000" : "#ffffff";
+	return { style: `--label-color: #${color}; --label-text: ${textColor}` };
+}
 
 export const OCTO_VIEW_TYPE = "octo-view";
 
@@ -66,6 +78,9 @@ export class OctosidianView extends ItemView {
 	repoFilter: string | null = null;
 	statusFilter: "all" | "open" | "draft" | "merged" | "closed" = "all";
 	detail: DetailState = null;
+	focusedIndex = 0;
+	gPrefixPending = false;
+	viewerPermission: Record<string, "admin" | "maintain" | "write" | "triage" | "read" | "none"> = {};
 	repoView: RepoViewState | null = null;
 	lastFetched = 0;
 	expandedRows: Set<number> = new Set();
@@ -92,12 +107,99 @@ export class OctosidianView extends ItemView {
 
 		this.render();
 
+		this.registerDomEvent(this.containerEl, "keydown", this.onKeyDown);
+
 		if (getClient()) {
 			this.refreshInBackground();
 		}
 	}
 
 	async onClose() {}
+
+	onKeyDown = (e: KeyboardEvent) => {
+		const target = e.target as HTMLElement;
+		const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+
+		if (e.key === "Escape") {
+			if (isInput) {
+				(target as HTMLInputElement).blur();
+				return;
+			}
+			if (this.detail) {
+				e.preventDefault();
+				this.closeDetail();
+			}
+			return;
+		}
+
+		if (isInput) return;
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+		if (this.gPrefixPending) {
+			this.gPrefixPending = false;
+			const tabMap: Record<string, TopTab> = { p: "pulls", i: "issues", v: "reviews", n: "inbox", o: "overview" };
+			const tab = tabMap[e.key];
+			if (tab) {
+				e.preventDefault();
+				this.detail = null;
+				this.activeTab = tab;
+				this.focusedIndex = 0;
+				this.render();
+			}
+			return;
+		}
+		if (e.key === "g" && !this.detail) {
+			this.gPrefixPending = true;
+			setTimeout(() => { this.gPrefixPending = false; }, 1200);
+			return;
+		}
+
+		if (e.key === "/") {
+			if (this.detail) return;
+			e.preventDefault();
+			const input = this.containerEl.querySelector(".octo-search-input") as HTMLInputElement | null;
+			input?.focus();
+			return;
+		}
+
+		if (e.key === "r" && !this.detail) {
+			e.preventDefault();
+			this.refresh();
+			return;
+		}
+
+		if (this.detail) return;
+
+		const rows = this.getFocusableRows();
+		if (rows.length === 0) return;
+
+		if (e.key === "j" || e.key === "ArrowDown") {
+			e.preventDefault();
+			this.focusedIndex = Math.min(rows.length - 1, this.focusedIndex + 1);
+			this.applyFocus(rows);
+		} else if (e.key === "k" || e.key === "ArrowUp") {
+			e.preventDefault();
+			this.focusedIndex = Math.max(0, this.focusedIndex - 1);
+			this.applyFocus(rows);
+		} else if (e.key === "Enter" || e.key === "o") {
+			e.preventDefault();
+			this.focusedIndex = Math.max(0, Math.min(rows.length - 1, this.focusedIndex));
+			rows[this.focusedIndex]?.click();
+		}
+	};
+
+	getFocusableRows(): HTMLElement[] {
+		return Array.from(this.containerEl.querySelectorAll(".octo-pr-row, .octo-inbox-row")) as HTMLElement[];
+	}
+
+	applyFocus(rows: HTMLElement[]) {
+		for (const r of rows) r.removeClass("octo-row-focused");
+		const row = rows[this.focusedIndex];
+		if (row) {
+			row.addClass("octo-row-focused");
+			row.scrollIntoView({ block: "nearest" });
+		}
+	}
 
 	async refreshInBackground() {
 		if (!getClient()) return;
@@ -110,7 +212,12 @@ export class OctosidianView extends ItemView {
 			this.notifications = notifs;
 			this.lastFetched = Date.now();
 
-			this.plugin.cache = { pulls, issues, lastFetched: this.lastFetched };
+			this.plugin.cache = {
+				...this.plugin.cache,
+				pulls,
+				issues,
+				lastFetched: this.lastFetched,
+			};
 			this.plugin.saveCache();
 		} catch (err) {
 			if (!this.pullsData && !this.issuesData) {
@@ -132,10 +239,16 @@ export class OctosidianView extends ItemView {
 	prChecks: CheckRun[] = [];
 
 	async openPrDetail(owner: string, repo: string, num: number) {
+		this.markSeenByNumber("pr", owner, repo, num);
 		this.detail = { type: "pr", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
-			const data = await getPullPageData(owner, repo, num);
+			const repoKey = `${owner}/${repo}`;
+			const viewerLogin = this.getViewerLogin();
+			const permPromise = viewerLogin && !this.viewerPermission[repoKey]
+				? getViewerPermission(owner, repo, viewerLogin).then((p) => { this.viewerPermission[repoKey] = p; })
+				: Promise.resolve();
+			const [data] = await Promise.all([getPullPageData(owner, repo, num), permPromise]);
 			if (data?.detail?.headSha) {
 				this.prChecks = await getPullChecks(owner, repo, data.detail.headSha);
 			} else {
@@ -153,6 +266,7 @@ export class OctosidianView extends ItemView {
 	}
 
 	async openIssueDetail(owner: string, repo: string, num: number) {
+		this.markSeenByNumber("issue", owner, repo, num);
 		this.detail = { type: "issue", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
@@ -339,6 +453,16 @@ export class OctosidianView extends ItemView {
 
 		if (this.lastFetched > 0) {
 			right.createSpan({ cls: "octo-topnav-updated", text: `Updated ${this.timeAgo(new Date(this.lastFetched).toISOString())}` });
+		}
+
+		const unreadCountAll = this.getUnreadCount();
+		if (unreadCountAll > 0) {
+			const markAll = right.createEl("button", {
+				cls: "octo-toolbar-btn octo-mark-all",
+				text: `Mark all read (${unreadCountAll})`,
+				attr: { "aria-label": "Mark all as read" },
+			});
+			markAll.addEventListener("click", () => this.markAllAsRead());
 		}
 
 		const refreshBtn = right.createEl("button", {
@@ -592,11 +716,14 @@ export class OctosidianView extends ItemView {
 	}
 
 	renderPrRow(parent: HTMLElement, pr: PullSummary) {
+		const unread = isUnread(this.plugin.cache, "pr", pr.id, pr.updatedAt);
 		const wrapper = parent.createDiv({ cls: "octo-pr-row-wrapper" });
-		const row = wrapper.createDiv({ cls: "octo-pr-row" });
+		const row = wrapper.createDiv({ cls: `octo-pr-row${unread ? " octo-row-unread" : ""}` });
 		row.addEventListener("click", () => {
 			this.openPrDetail(pr.repository.owner, pr.repository.name, pr.number);
 		});
+
+		if (unread) row.createDiv({ cls: "octo-row-unread-dot" });
 
 		const { svg, cls } = prStateIcon(pr);
 		const iconEl = row.createDiv({ cls: `octo-pr-icon ${cls}` });
@@ -621,7 +748,7 @@ export class OctosidianView extends ItemView {
 		if (pr.labels.length > 0) {
 			const labels = info.createDiv({ cls: "octo-pr-labels" });
 			for (const label of pr.labels.slice(0, 4)) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -746,11 +873,14 @@ export class OctosidianView extends ItemView {
 	}
 
 	renderIssueRow(parent: HTMLElement, issue: IssueSummary) {
+		const unread = isUnread(this.plugin.cache, "issue", issue.id, issue.updatedAt);
 		const wrapper = parent.createDiv({ cls: "octo-pr-row-wrapper" });
-		const row = wrapper.createDiv({ cls: "octo-pr-row" });
+		const row = wrapper.createDiv({ cls: `octo-pr-row${unread ? " octo-row-unread" : ""}` });
 		row.addEventListener("click", () => {
 			this.openIssueDetail(issue.repository.owner, issue.repository.name, issue.number);
 		});
+
+		if (unread) row.createDiv({ cls: "octo-row-unread-dot" });
 
 		const isOpen = issue.state === "open";
 		const iconEl = row.createDiv({ cls: `octo-pr-icon ${isOpen ? "octo-icon-open" : "octo-icon-closed"}` });
@@ -775,7 +905,7 @@ export class OctosidianView extends ItemView {
 		if (issue.labels.length > 0) {
 			const labels = info.createDiv({ cls: "octo-pr-labels" });
 			for (const label of issue.labels.slice(0, 4)) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -892,7 +1022,11 @@ export class OctosidianView extends ItemView {
 				} catch { new Notice("Octosidian: Failed to update PR state"); stateBtn.disabled = false; stateBtn.textContent = pr.state === "open" ? "Close PR" : "Reopen PR"; }
 			});
 
-			if (pr.state === "open" && !pr.isDraft) {
+			const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+			const permission = this.viewerPermission[repoKey] ?? null;
+			const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
+
+			if (pr.state === "open" && !pr.isDraft && canMerge) {
 				const mergeWrapper = actionsGroup.createDiv({ cls: "octo-merge-wrapper" });
 				const mergeBtn = mergeWrapper.createEl("button", { cls: "octo-action-btn octo-action-btn-primary", text: "Merge" });
 				const mergeArrow = mergeWrapper.createEl("button", { cls: "octo-action-btn octo-action-btn-primary octo-merge-arrow", text: "▾" });
@@ -938,10 +1072,12 @@ export class OctosidianView extends ItemView {
 		branchInfo.createSpan({ text: " → " });
 		branchInfo.createSpan({ cls: "octo-branch", text: pr.baseRefName });
 
+		this.renderMergeStatusBanner(content, pr);
+
 		if (pr.labels.length > 0) {
 			const labels = content.createDiv({ cls: "octo-detail-labels" });
 			for (const label of pr.labels) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -975,22 +1111,11 @@ export class OctosidianView extends ItemView {
 			}
 		}
 
-		if (data.comments.length > 0) {
-			const commentsSection = content.createDiv({ cls: "octo-detail-comments" });
-			commentsSection.createDiv({ cls: "octo-detail-section-title", text: `Comments (${data.comments.length})` });
-			for (const comment of data.comments) {
-				const c = commentsSection.createDiv({ cls: "octo-comment" });
-				const cHeader = c.createDiv({ cls: "octo-comment-header" });
-				if (comment.author) {
-					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
-					avatar.addEventListener("error", () => avatar.remove());
-					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
-				}
-				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
-				const cBody = c.createDiv({ cls: "octo-comment-body" });
-				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
-			}
+		if (data.reviewThreads && data.reviewThreads.length > 0) {
+			this.renderReviewThreads(content, data.reviewThreads);
 		}
+
+		this.renderTimeline(content, data.comments, data.events);
 
 		const commentForm = content.createDiv({ cls: "octo-comment-form" });
 		const textarea = commentForm.createEl("textarea", { cls: "octo-comment-textarea", attr: { placeholder: "Leave a comment..." } });
@@ -1038,7 +1163,7 @@ export class OctosidianView extends ItemView {
 		if (issue.labels.length > 0) {
 			const labels = content.createDiv({ cls: "octo-detail-labels" });
 			for (const label of issue.labels) {
-				labels.createSpan({ cls: "octo-label", text: label.name, attr: { style: `--label-color: #${label.color}` } });
+				labels.createSpan({ cls: "octo-label", text: label.name, attr: labelAttrs(label.color) });
 			}
 		}
 
@@ -1057,22 +1182,7 @@ export class OctosidianView extends ItemView {
 			MarkdownRenderer.render(this.app, issue.body, bodyContainer, "", this);
 		}
 
-		if (data.comments.length > 0) {
-			const commentsSection = content.createDiv({ cls: "octo-detail-comments" });
-			commentsSection.createDiv({ cls: "octo-detail-section-title", text: `Comments (${data.comments.length})` });
-			for (const comment of data.comments) {
-				const c = commentsSection.createDiv({ cls: "octo-comment" });
-				const cHeader = c.createDiv({ cls: "octo-comment-header" });
-				if (comment.author) {
-					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
-					avatar.addEventListener("error", () => avatar.remove());
-					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
-				}
-				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
-				const cBody = c.createDiv({ cls: "octo-comment-body" });
-				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
-			}
-		}
+		this.renderTimeline(content, data.comments, data.events);
 
 		const commentForm = content.createDiv({ cls: "octo-comment-form" });
 		const textarea = commentForm.createEl("textarea", { cls: "octo-comment-textarea", attr: { placeholder: "Leave a comment..." } });
@@ -1303,6 +1413,31 @@ export class OctosidianView extends ItemView {
 
 	renderSearchBar(parent: HTMLElement, mode: "pr" | "issue" = "pr") {
 		const toolbar = parent.createDiv({ cls: "octo-toolbar" });
+
+		const saved = this.plugin.settings.savedSearches ?? [];
+		const scope: "pr" | "issue" | "all" = mode;
+		const relevant = saved.filter((s) => s.scope === "all" || s.scope === scope);
+		if (relevant.length > 0) {
+			const chipsRow = toolbar.createDiv({ cls: "octo-saved-chips" });
+			for (const s of relevant) {
+				const chip = chipsRow.createSpan({
+					cls: `octo-saved-chip${this.searchQuery === s.query ? " octo-saved-chip-active" : ""}`,
+					text: s.name,
+				});
+				chip.addEventListener("click", () => {
+					this.searchQuery = this.searchQuery === s.query ? "" : s.query;
+					this.render();
+				});
+				const del = chip.createSpan({ cls: "octo-saved-chip-del", text: "×", attr: { "aria-label": "Delete saved search" } });
+				del.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.plugin.settings.savedSearches = (this.plugin.settings.savedSearches ?? []).filter((x) => x.id !== s.id);
+					this.plugin.saveSettings();
+					this.render();
+				});
+			}
+		}
+
 		const row = toolbar.createDiv({ cls: "octo-search-row" });
 
 		const searchBox = row.createDiv({ cls: "octo-search-box" });
@@ -1319,6 +1454,15 @@ export class OctosidianView extends ItemView {
 			const newInput = this.containerEl.querySelector(".octo-search-input") as HTMLInputElement;
 			if (newInput) { newInput.focus(); newInput.setSelectionRange(this.searchQuery.length, this.searchQuery.length); }
 		});
+
+		if (this.searchQuery.trim().length > 0) {
+			const saveBtn = row.createEl("button", {
+				cls: "octo-sort-btn octo-save-search-btn",
+				text: "Save",
+				attr: { "aria-label": "Save this search" },
+			});
+			saveBtn.addEventListener("click", () => this.promptSaveSearch(mode));
+		}
 
 		const sortBtn = row.createEl("button", { cls: "octo-sort-btn", attr: { "aria-label": "Sort" } });
 		const sortLabels: Record<string, string> = { updated: "Recently updated", newest: "Newest", oldest: "Oldest", comments: "Most comments" };
@@ -1459,6 +1603,367 @@ export class OctosidianView extends ItemView {
 		const iconEl = empty.createDiv({ cls: "octo-empty-icon" });
 		iconEl.innerHTML = ICONS.prOpen;
 		empty.createDiv({ cls: "octo-empty-text", text: message });
+	}
+
+	getViewerLogin(): string | null {
+		if (!this.pullsData) return null;
+		const lists = [this.pullsData.authored, this.pullsData.reviewRequested, this.pullsData.assigned, this.pullsData.mentioned];
+		for (const list of lists) {
+			for (const pr of list) if (pr.author) return pr.author.login;
+		}
+		return null;
+	}
+
+	promptSaveSearch(scope: "pr" | "issue" | "all") {
+		const name = window.prompt("Name this saved search:", this.searchQuery.slice(0, 32));
+		if (!name) return;
+		const id = `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+		this.plugin.settings.savedSearches = [
+			...(this.plugin.settings.savedSearches ?? []),
+			{ id, name: name.trim(), query: this.searchQuery, scope },
+		];
+		this.plugin.saveSettings();
+		this.render();
+	}
+
+	markSeenByNumber(kind: "pr" | "issue", owner: string, repo: string, num: number) {
+		const list = kind === "pr" ? this.pullsData : this.issuesData;
+		if (!list) return;
+		const items = kind === "pr"
+			? [...(list as MyPullsResult).reviewRequested, ...(list as MyPullsResult).authored, ...(list as MyPullsResult).assigned, ...(list as MyPullsResult).mentioned, ...((list as MyPullsResult).involved ?? [])]
+			: [...(list as MyIssuesResult).assigned, ...(list as MyIssuesResult).authored, ...(list as MyIssuesResult).mentioned];
+		const hit = items.find((i) => i.number === num && i.repository.owner === owner && i.repository.name === repo);
+		if (hit) {
+			this.plugin.cache.lastSeen[seenKey(kind, hit.id)] = Date.now();
+			this.plugin.saveCache();
+		}
+	}
+
+	getUnreadCount(): number {
+		let n = 0;
+		const p = this.pullsData;
+		if (p) {
+			for (const list of [p.reviewRequested, p.authored, p.assigned, p.mentioned, p.involved ?? []]) {
+				for (const pr of list) if (isUnread(this.plugin.cache, "pr", pr.id, pr.updatedAt)) n++;
+			}
+		}
+		const i = this.issuesData;
+		if (i) {
+			for (const list of [i.assigned, i.authored, i.mentioned]) {
+				for (const is of list) if (isUnread(this.plugin.cache, "issue", is.id, is.updatedAt)) n++;
+			}
+		}
+		return n;
+	}
+
+	markAllAsRead() {
+		const now = Date.now();
+		const p = this.pullsData;
+		if (p) {
+			for (const list of [p.reviewRequested, p.authored, p.assigned, p.mentioned, p.involved ?? []]) {
+				for (const pr of list) this.plugin.cache.lastSeen[seenKey("pr", pr.id)] = now;
+			}
+		}
+		const i = this.issuesData;
+		if (i) {
+			for (const list of [i.assigned, i.authored, i.mentioned]) {
+				for (const is of list) this.plugin.cache.lastSeen[seenKey("issue", is.id)] = now;
+			}
+		}
+		this.plugin.saveCache();
+		this.render();
+	}
+
+	renderMergeStatusBanner(parent: HTMLElement, pr: NonNullable<PullPageData["detail"]>) {
+		const repoKey = `${this.detail!.owner}/${this.detail!.repo}`;
+		const permission = this.viewerPermission[repoKey] ?? null;
+		const canMerge = permission !== null && ["admin", "maintain", "write"].includes(permission);
+
+		let statusCls = "octo-merge-banner-neutral";
+		let statusText = "";
+		if (pr.isMerged) {
+			statusCls = "octo-merge-banner-ok";
+			const by = pr.mergedBy?.login ?? "someone";
+			const when = pr.mergedAt ? this.timeAgo(pr.mergedAt) : "";
+			statusText = `Merged by ${by} · ${when}`;
+		} else if (pr.state === "closed") {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Closed without merging";
+		} else if (pr.isDraft) {
+			statusCls = "octo-merge-banner-neutral";
+			statusText = "Draft — mark as ready for review when done";
+		} else if (pr.mergeable === null) {
+			statusText = "GitHub is computing mergeability…";
+		} else if (pr.mergeable === false) {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Conflicts must be resolved";
+		} else if (pr.mergeableState === "clean") {
+			statusCls = "octo-merge-banner-ok";
+			statusText = "Ready to merge";
+		} else if (pr.mergeableState === "unstable") {
+			statusCls = "octo-merge-banner-warn";
+			statusText = "Mergeable with failing checks";
+		} else if (pr.mergeableState === "blocked") {
+			statusCls = "octo-merge-banner-error";
+			statusText = "Merge blocked (required reviews or checks)";
+		}
+
+		if (!statusText) return;
+
+		const banner = parent.createDiv({ cls: `octo-merge-banner ${statusCls}` });
+		banner.createSpan({ text: statusText });
+		if (!pr.isMerged && pr.state === "open" && !pr.isDraft && permission !== null && !canMerge) {
+			banner.createSpan({ cls: "octo-merge-banner-perm", text: " · You don't have permission to merge." });
+		}
+	}
+
+	renderReviewThreads(parent: HTMLElement, threads: ReviewThread[]) {
+		const totalReplies = threads.reduce((sum, t) => sum + t.replies.length, 0);
+		const fileMap = new Map<string, ReviewThread[]>();
+		for (const thread of threads) {
+			const arr = fileMap.get(thread.path) ?? [];
+			arr.push(thread);
+			fileMap.set(thread.path, arr);
+		}
+
+		const section = parent.createDiv({ cls: "octo-review-threads" });
+		section.createDiv({
+			cls: "octo-detail-section-title",
+			text: `Review Comments (${threads.length} thread${threads.length !== 1 ? "s" : ""}, ${totalReplies} ${totalReplies !== 1 ? "replies" : "reply"})`,
+		});
+
+		for (const [path, fileThreads] of fileMap) {
+			const fileGroup = section.createDiv({ cls: "octo-review-file-group" });
+			let fileExpanded = true;
+			const fileHeader = fileGroup.createDiv({ cls: "octo-review-file-header" });
+			const chevronEl = fileHeader.createSpan({ cls: "octo-review-file-chevron" });
+			chevronEl.innerHTML = ICONS.chevronDown;
+			const fileIconEl = fileHeader.createSpan({ cls: "octo-review-file-icon" });
+			fileIconEl.innerHTML = ICONS.file;
+			fileHeader.createSpan({ cls: "octo-review-file-path", text: path });
+			fileHeader.createSpan({ cls: "octo-review-file-count", text: String(fileThreads.length) });
+			const fileBody = fileGroup.createDiv({ cls: "octo-review-file-body" });
+			fileHeader.addEventListener("click", () => {
+				fileExpanded = !fileExpanded;
+				chevronEl.innerHTML = fileExpanded ? ICONS.chevronDown : ICONS.chevronRight;
+				fileBody.style.display = fileExpanded ? "" : "none";
+			});
+
+			for (const thread of fileThreads) {
+				const threadEl = fileBody.createDiv({
+					cls: `octo-review-thread${thread.isResolved ? " octo-review-resolved" : ""}`,
+				});
+				const threadHeader = threadEl.createDiv({ cls: "octo-review-thread-header" });
+				if (thread.isResolved) {
+					const resolvedPill = threadHeader.createSpan({ cls: "octo-review-resolved-pill" });
+					const resolvedIcon = resolvedPill.createSpan();
+					resolvedIcon.innerHTML = ICONS.checkCircle;
+					resolvedPill.createSpan({ text: "Resolved" });
+				}
+				const lineRef = thread.line !== null ? `:${thread.line}` : "";
+				threadHeader.createSpan({ cls: "octo-review-thread-location", text: `${thread.side === "LEFT" ? "L" : "R"}${lineRef}` });
+
+				let threadExpanded = !thread.isResolved;
+				const threadBody = threadEl.createDiv({ cls: "octo-review-thread-body" });
+				if (!threadExpanded) threadBody.style.display = "none";
+				if (thread.isResolved) {
+					threadHeader.addEventListener("click", () => {
+						threadExpanded = !threadExpanded;
+						threadBody.style.display = threadExpanded ? "" : "none";
+					});
+					threadHeader.style.cursor = "pointer";
+				}
+
+				if (thread.diffHunk) {
+					const hunkEl = threadBody.createDiv({ cls: "octo-review-hunk" });
+					const lines = thread.diffHunk.split("\n");
+					for (const line of lines) {
+						const lineEl = hunkEl.createDiv({ cls: "octo-review-hunk-line" });
+						if (line.startsWith("+")) lineEl.addClass("octo-review-hunk-add");
+						else if (line.startsWith("-")) lineEl.addClass("octo-review-hunk-del");
+						lineEl.createSpan({ text: line });
+					}
+				}
+
+				const rootCommentEl = threadBody.createDiv({ cls: "octo-comment" });
+				this.renderReviewCommentBody(rootCommentEl, thread.root, false);
+				for (const reply of thread.replies) {
+					const replyEl = threadBody.createDiv({ cls: "octo-comment" });
+					this.renderReviewCommentBody(replyEl, reply, true);
+				}
+			}
+		}
+	}
+
+	renderReviewCommentBody(commentEl: HTMLElement, comment: ReviewThread["root"], isReply: boolean) {
+		if (isReply) commentEl.addClass("octo-review-reply");
+		const commentHeader = commentEl.createDiv({ cls: "octo-comment-header" });
+		if (comment.author) {
+			const avatar = commentHeader.createEl("img", {
+				cls: "octo-comment-avatar",
+				attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" },
+			});
+			avatar.addEventListener("error", () => avatar.remove());
+			commentHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+		}
+		commentHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
+		const commentBody = commentEl.createDiv({ cls: "octo-comment-body" });
+		MarkdownRenderer.render(this.app, comment.body, commentBody, "", this);
+	}
+
+	renderTimeline(parent: HTMLElement, comments: PullComment[] | IssueComment[], events: TimelineEvent[]) {
+		const SUPPORTED = new Set([
+			"labeled", "unlabeled", "assigned", "unassigned",
+			"review_requested", "review_request_removed",
+			"renamed", "closed", "reopened", "merged",
+			"referenced", "cross-referenced",
+			"milestoned", "demilestoned",
+			"head_ref_deleted", "head_ref_restored",
+			"ready_for_review", "convert_to_draft",
+		]);
+
+		const filteredEvents = events.filter((e) => SUPPORTED.has(e.event));
+
+		type CommentEntry = { kind: "comment"; data: PullComment | IssueComment; ts: number };
+		type EventEntry = { kind: "event"; data: TimelineEvent | GroupedLabelEvent; ts: number };
+		type TimelineEntry = CommentEntry | EventEntry;
+
+		const grouped: (TimelineEvent | GroupedLabelEvent)[] = [];
+		let i = 0;
+		while (i < filteredEvents.length) {
+			const ev = filteredEvents[i];
+			if (ev.event === "labeled" || ev.event === "unlabeled") {
+				const actor = ev.actor?.login ?? null;
+				const baseTs = new Date(ev.createdAt).getTime();
+				const batch: TimelineEvent[] = [ev];
+				let j = i + 1;
+				while (j < filteredEvents.length) {
+					const next = filteredEvents[j];
+					if (
+						(next.event === "labeled" || next.event === "unlabeled") &&
+						next.actor?.login === actor &&
+						Math.abs(new Date(next.createdAt).getTime() - baseTs) <= 60000
+					) {
+						batch.push(next);
+						j++;
+					} else {
+						break;
+					}
+				}
+				if (batch.length === 1) {
+					grouped.push(ev);
+				} else {
+					const added = batch.filter((b) => b.event === "labeled").map((b) => b.label ?? { name: "", color: "" });
+					const removed = batch.filter((b) => b.event === "unlabeled").map((b) => b.label ?? { name: "", color: "" });
+					grouped.push({
+						kind: "grouped-label",
+						actor: ev.actor,
+						createdAt: ev.createdAt,
+						added: added.filter((l) => l.name),
+						removed: removed.filter((l) => l.name),
+					});
+				}
+				i = j;
+			} else {
+				grouped.push(ev);
+				i++;
+			}
+		}
+
+		const entries: TimelineEntry[] = [
+			...comments.map((c) => ({ kind: "comment" as const, data: c, ts: new Date(c.createdAt).getTime() })),
+			...grouped.map((e) => ({ kind: "event" as const, data: e, ts: new Date(e.createdAt).getTime() })),
+		].sort((a, b) => a.ts - b.ts);
+
+		if (entries.length === 0) return;
+
+		const section = parent.createDiv({ cls: "octo-detail-comments" });
+		section.createDiv({ cls: "octo-detail-section-title", text: `Activity (${entries.length})` });
+		const timeline = section.createDiv({ cls: "octo-timeline" });
+
+		for (const entry of entries) {
+			if (entry.kind === "comment") {
+				const comment = entry.data;
+				const item = timeline.createDiv({ cls: "octo-timeline-item octo-timeline-item-comment" });
+				const c = item.createDiv({ cls: "octo-comment" });
+				const cHeader = c.createDiv({ cls: "octo-comment-header" });
+				if (comment.author) {
+					const avatar = cHeader.createEl("img", { cls: "octo-comment-avatar", attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" } });
+					avatar.addEventListener("error", () => avatar.remove());
+					cHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+				}
+				cHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
+				const cBody = c.createDiv({ cls: "octo-comment-body" });
+				MarkdownRenderer.render(this.app, comment.body, cBody, "", this);
+				this.renderReactions(c, comment);
+			} else {
+				const ev = entry.data;
+				const item = timeline.createDiv({ cls: "octo-timeline-item octo-timeline-item-event" });
+				const iconEl = item.createSpan({ cls: "octo-timeline-icon" });
+				const textEl = item.createSpan({ cls: "octo-timeline-text" });
+				item.createSpan({ cls: "octo-timeline-time", text: this.timeAgo(ev.createdAt) });
+
+				if ("kind" in ev && ev.kind === "grouped-label") {
+					iconEl.innerHTML = ev.added.length > 0 && ev.removed.length === 0
+						? ICONS.labelAdded
+						: ev.removed.length > 0 && ev.added.length === 0
+						? ICONS.labelRemoved
+						: ICONS.labelAdded;
+					const actor = ev.actor?.login ?? "someone";
+					if (ev.added.length > 0 && ev.removed.length === 0) {
+						textEl.textContent = `${actor} added labels: ${ev.added.map((l) => l.name).join(", ")}`;
+					} else if (ev.removed.length > 0 && ev.added.length === 0) {
+						textEl.textContent = `${actor} removed labels: ${ev.removed.map((l) => l.name).join(", ")}`;
+					} else {
+						textEl.textContent = `${actor} changed labels: added ${ev.added.map((l) => l.name).join(", ")}; removed ${ev.removed.map((l) => l.name).join(", ")}`;
+					}
+				} else {
+					const e = ev as TimelineEvent;
+					const actor = e.actor?.login ?? "someone";
+					switch (e.event) {
+						case "labeled": iconEl.innerHTML = ICONS.labelAdded; textEl.textContent = `${actor} added label ${e.label?.name ?? ""}`; break;
+						case "unlabeled": iconEl.innerHTML = ICONS.labelRemoved; textEl.textContent = `${actor} removed label ${e.label?.name ?? ""}`; break;
+						case "assigned": iconEl.innerHTML = ICONS.assigned; textEl.textContent = `${actor} assigned ${e.assignee?.login ?? ""}`; break;
+						case "unassigned": iconEl.innerHTML = ICONS.assigned; textEl.textContent = `${actor} unassigned ${e.assignee?.login ?? ""}`; break;
+						case "review_requested": iconEl.innerHTML = ICONS.reviewRequested; textEl.textContent = `${actor} requested review from ${e.requestedReviewer?.login ?? e.requestedTeam?.name ?? ""}`; break;
+						case "review_request_removed": iconEl.innerHTML = ICONS.reviewRequested; textEl.textContent = `${actor} removed review request from ${e.requestedReviewer?.login ?? e.requestedTeam?.name ?? ""}`; break;
+						case "renamed": iconEl.innerHTML = ICONS.renamed; textEl.textContent = `${actor} renamed from "${e.rename?.from ?? ""}" to "${e.rename?.to ?? ""}"`; break;
+						case "closed":
+							iconEl.innerHTML = ICONS.closed;
+							textEl.textContent = e.stateReason === "not_planned" ? `${actor} closed this as not planned` : `${actor} closed this`;
+							break;
+						case "reopened": iconEl.innerHTML = ICONS.reopened; textEl.textContent = `${actor} reopened this`; break;
+						case "merged": iconEl.innerHTML = ICONS.merged; textEl.textContent = `${actor} merged this`; break;
+						case "referenced":
+						case "cross-referenced":
+							iconEl.innerHTML = ICONS.referenced;
+							textEl.textContent = e.source ? `${actor} referenced this in #${e.source.number}` : `${actor} referenced this`;
+							break;
+						case "milestoned": iconEl.innerHTML = ICONS.milestone; textEl.textContent = `${actor} added to milestone ${e.milestone?.title ?? ""}`; break;
+						case "demilestoned": iconEl.innerHTML = ICONS.milestone; textEl.textContent = `${actor} removed from milestone ${e.milestone?.title ?? ""}`; break;
+						case "head_ref_deleted": iconEl.innerHTML = ICONS.branchDeleted; textEl.textContent = `${actor} deleted the branch`; break;
+						case "head_ref_restored": iconEl.innerHTML = ICONS.branchRestored; textEl.textContent = `${actor} restored the branch`; break;
+						case "ready_for_review": iconEl.innerHTML = ICONS.readyForReview; textEl.textContent = `${actor} marked as ready for review`; break;
+						case "convert_to_draft": iconEl.innerHTML = ICONS.draft; textEl.textContent = `${actor} converted to draft`; break;
+					}
+				}
+			}
+		}
+	}
+
+	renderReactions(parent: HTMLElement, comment: PullComment | IssueComment) {
+		if (!comment.reactions?.total) return;
+		const EMOJI_MAP: Record<string, string> = {
+			"+1": "👍", "-1": "👎", laugh: "😄", hooray: "🎉",
+			confused: "😕", heart: "❤️", rocket: "🚀", eyes: "👀",
+		};
+		const bar = parent.createDiv({ cls: "octo-reactions" });
+		for (const [key, emoji] of Object.entries(EMOJI_MAP)) {
+			const count = comment.reactions.byType[key as keyof typeof comment.reactions.byType];
+			if (count && count > 0) {
+				bar.createSpan({ cls: "octo-reaction-pill", text: `${emoji} ${count}` });
+			}
+		}
 	}
 
 	timeAgo(dateStr: string): string {

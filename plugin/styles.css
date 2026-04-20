@@ -425,9 +425,13 @@
 	font-size: 11px;
 	font-weight: 500;
 	line-height: 18px;
-	border: 1px solid color-mix(in srgb, var(--label-color) 40%, transparent);
-	background: color-mix(in srgb, var(--label-color) 12%, transparent);
-	color: color-mix(in srgb, var(--label-color) 85%, var(--text-normal));
+	border: 1px solid color-mix(in srgb, var(--label-color) 55%, transparent);
+	background: color-mix(in srgb, var(--label-color) 18%, transparent);
+	color: color-mix(in srgb, var(--label-color) 70%, var(--text-normal));
+}
+
+.theme-dark .octo-label {
+	color: color-mix(in srgb, var(--label-color) 80%, white 20%);
 }
 
 /* Comments always visible */
@@ -1788,4 +1792,307 @@
 .octo-readme-body h1:first-child,
 .octo-readme-body h2:first-child {
 	margin-top: 0 !important;
+}
+
+/* --- Reactions (Slice E) --- */
+
+.octo-reactions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+
+.octo-reaction-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 7px;
+	border-radius: 10px;
+	font-size: 12px;
+	background: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	cursor: default;
+	user-select: none;
+}
+
+/* --- Unread state --- */
+
+.octo-pr-row.octo-row-unread {
+	position: relative;
+}
+
+.octo-row-unread-dot {
+	position: absolute;
+	left: 2px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	flex-shrink: 0;
+}
+
+.octo-row-unread .octo-pr-title {
+	font-weight: 600;
+}
+
+.octo-mark-all {
+	font-size: 11px;
+	padding: 4px 10px;
+	font-weight: 500;
+	width: auto;
+}
+
+/* --- Saved searches --- */
+
+.octo-saved-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.octo-saved-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 12px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	font-size: 11px;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: all 100ms;
+}
+
+.octo-saved-chip:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border-hover);
+}
+
+.octo-saved-chip-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.octo-saved-chip-del {
+	font-size: 13px;
+	line-height: 1;
+	opacity: 0.5;
+	padding: 0 2px;
+}
+
+.octo-saved-chip-del:hover {
+	opacity: 1;
+}
+
+.octo-save-search-btn {
+	font-weight: 500;
+}
+
+/* --- Keyboard focus --- */
+
+.octo-row-focused {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+	background: var(--background-modifier-hover);
+}
+
+/* --- Activity Timeline (Slice A) --- */
+
+.octo-timeline {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	padding-left: 24px;
+}
+
+.octo-timeline::before {
+	content: "";
+	position: absolute;
+	left: 7px;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--background-modifier-border);
+	border-radius: 1px;
+}
+
+.octo-timeline-item {
+	position: relative;
+}
+
+.octo-timeline-item-comment {
+	padding: 4px 0 8px 0;
+}
+
+.octo-timeline-item-event {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 0;
+	min-height: 28px;
+}
+
+.octo-timeline-icon {
+	position: absolute;
+	left: -22px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	flex-shrink: 0;
+	z-index: 1;
+}
+
+.octo-timeline-item-comment .octo-timeline-icon {
+	top: 10px;
+	transform: none;
+}
+
+.octo-timeline-text {
+	font-size: 12px;
+	color: var(--text-muted);
+	flex: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.octo-timeline-time {
+	font-size: 11px;
+	color: var(--text-faint);
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+/* --- Review threads (Slice B) --- */
+
+.octo-review-threads {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin: 16px 0;
+}
+
+.octo-review-file-group {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.octo-review-file-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	background: var(--background-secondary);
+	cursor: pointer;
+	font-family: var(--font-monospace);
+	font-size: 12px;
+}
+
+.octo-review-file-header:hover {
+	background: var(--background-modifier-hover);
+}
+
+.octo-review-file-chevron,
+.octo-review-file-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+.octo-review-file-path { flex: 1; }
+.octo-review-file-count {
+	font-size: 11px;
+	color: var(--text-muted);
+	background: var(--background-modifier-border);
+	padding: 1px 6px;
+	border-radius: 10px;
+}
+
+.octo-review-thread {
+	padding: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.octo-review-thread-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.octo-review-resolved-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: color-mix(in srgb, #3fb950 20%, transparent);
+	color: #3fb950;
+	font-size: 10px;
+}
+
+.octo-review-hunk {
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 6px 0;
+	overflow-x: auto;
+	margin-bottom: 8px;
+}
+
+.octo-review-hunk-line {
+	padding: 0 12px;
+	white-space: pre;
+}
+
+.octo-review-hunk-add { background: rgba(46, 160, 67, 0.15); }
+.octo-review-hunk-del { background: rgba(248, 81, 73, 0.15); }
+
+.octo-review-reply {
+	margin-left: 20px;
+	border-left: 2px solid var(--background-modifier-border);
+	padding-left: 12px;
+}
+
+/* --- Merge status banner (Slice C) --- */
+
+.octo-merge-banner {
+	padding: 10px 14px;
+	border-radius: 8px;
+	font-size: 13px;
+	font-weight: 500;
+	margin: 12px 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.octo-merge-banner-ok    { background: color-mix(in srgb, #3fb950 18%, transparent); color: #3fb950; border: 1px solid color-mix(in srgb, #3fb950 40%, transparent); }
+.octo-merge-banner-error { background: color-mix(in srgb, #f85149 18%, transparent); color: #f85149; border: 1px solid color-mix(in srgb, #f85149 40%, transparent); }
+.octo-merge-banner-warn  { background: color-mix(in srgb, #d29922 18%, transparent); color: #d29922; border: 1px solid color-mix(in srgb, #d29922 40%, transparent); }
+.octo-merge-banner-neutral { background: var(--background-secondary); color: var(--text-muted); border: 1px solid var(--background-modifier-border); }
+
+.octo-merge-banner-perm {
+	font-weight: 400;
+	opacity: 0.7;
 }
