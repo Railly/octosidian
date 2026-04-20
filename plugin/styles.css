@@ -1816,3 +1816,32 @@
 	cursor: default;
 	user-select: none;
 }
+
+/* --- Unread state --- */
+
+.octo-pr-row.octo-row-unread {
+	position: relative;
+}
+
+.octo-row-unread-dot {
+	position: absolute;
+	left: 2px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	flex-shrink: 0;
+}
+
+.octo-row-unread .octo-pr-title {
+	font-weight: 600;
+}
+
+.octo-mark-all {
+	font-size: 11px;
+	padding: 4px 10px;
+	font-weight: 500;
+	width: auto;
+}

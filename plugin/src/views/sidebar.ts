@@ -15,6 +15,7 @@ import type {
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
+import { isUnread, seenKey } from "../cache";
 
 function labelAttrs(color: string): { style: string } {
 	const textColor = textColorFor(color) === "dark" ? "#000000" : "#ffffff";
@@ -118,7 +119,12 @@ export class OctosidianView extends ItemView {
 			this.notifications = notifs;
 			this.lastFetched = Date.now();
 
-			this.plugin.cache = { pulls, issues, lastFetched: this.lastFetched };
+			this.plugin.cache = {
+				...this.plugin.cache,
+				pulls,
+				issues,
+				lastFetched: this.lastFetched,
+			};
 			this.plugin.saveCache();
 		} catch (err) {
 			if (!this.pullsData && !this.issuesData) {
@@ -140,6 +146,7 @@ export class OctosidianView extends ItemView {
 	prChecks: CheckRun[] = [];
 
 	async openPrDetail(owner: string, repo: string, num: number) {
+		this.markSeenByNumber("pr", owner, repo, num);
 		this.detail = { type: "pr", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
@@ -161,6 +168,7 @@ export class OctosidianView extends ItemView {
 	}
 
 	async openIssueDetail(owner: string, repo: string, num: number) {
+		this.markSeenByNumber("issue", owner, repo, num);
 		this.detail = { type: "issue", owner, repo, number: num, data: null, loading: true };
 		this.render();
 		try {
@@ -347,6 +355,16 @@ export class OctosidianView extends ItemView {
 
 		if (this.lastFetched > 0) {
 			right.createSpan({ cls: "octo-topnav-updated", text: `Updated ${this.timeAgo(new Date(this.lastFetched).toISOString())}` });
+		}
+
+		const unreadCountAll = this.getUnreadCount();
+		if (unreadCountAll > 0) {
+			const markAll = right.createEl("button", {
+				cls: "octo-toolbar-btn octo-mark-all",
+				text: `Mark all read (${unreadCountAll})`,
+				attr: { "aria-label": "Mark all as read" },
+			});
+			markAll.addEventListener("click", () => this.markAllAsRead());
 		}
 
 		const refreshBtn = right.createEl("button", {
@@ -600,11 +618,14 @@ export class OctosidianView extends ItemView {
 	}
 
 	renderPrRow(parent: HTMLElement, pr: PullSummary) {
+		const unread = isUnread(this.plugin.cache, "pr", pr.id, pr.updatedAt);
 		const wrapper = parent.createDiv({ cls: "octo-pr-row-wrapper" });
-		const row = wrapper.createDiv({ cls: "octo-pr-row" });
+		const row = wrapper.createDiv({ cls: `octo-pr-row${unread ? " octo-row-unread" : ""}` });
 		row.addEventListener("click", () => {
 			this.openPrDetail(pr.repository.owner, pr.repository.name, pr.number);
 		});
+
+		if (unread) row.createDiv({ cls: "octo-row-unread-dot" });
 
 		const { svg, cls } = prStateIcon(pr);
 		const iconEl = row.createDiv({ cls: `octo-pr-icon ${cls}` });
@@ -754,11 +775,14 @@ export class OctosidianView extends ItemView {
 	}
 
 	renderIssueRow(parent: HTMLElement, issue: IssueSummary) {
+		const unread = isUnread(this.plugin.cache, "issue", issue.id, issue.updatedAt);
 		const wrapper = parent.createDiv({ cls: "octo-pr-row-wrapper" });
-		const row = wrapper.createDiv({ cls: "octo-pr-row" });
+		const row = wrapper.createDiv({ cls: `octo-pr-row${unread ? " octo-row-unread" : ""}` });
 		row.addEventListener("click", () => {
 			this.openIssueDetail(issue.repository.owner, issue.repository.name, issue.number);
 		});
+
+		if (unread) row.createDiv({ cls: "octo-row-unread-dot" });
 
 		const isOpen = issue.state === "open";
 		const iconEl = row.createDiv({ cls: `octo-pr-icon ${isOpen ? "octo-icon-open" : "octo-icon-closed"}` });
@@ -1469,6 +1493,54 @@ export class OctosidianView extends ItemView {
 		const iconEl = empty.createDiv({ cls: "octo-empty-icon" });
 		iconEl.innerHTML = ICONS.prOpen;
 		empty.createDiv({ cls: "octo-empty-text", text: message });
+	}
+
+	markSeenByNumber(kind: "pr" | "issue", owner: string, repo: string, num: number) {
+		const list = kind === "pr" ? this.pullsData : this.issuesData;
+		if (!list) return;
+		const items = kind === "pr"
+			? [...(list as MyPullsResult).reviewRequested, ...(list as MyPullsResult).authored, ...(list as MyPullsResult).assigned, ...(list as MyPullsResult).mentioned, ...((list as MyPullsResult).involved ?? [])]
+			: [...(list as MyIssuesResult).assigned, ...(list as MyIssuesResult).authored, ...(list as MyIssuesResult).mentioned];
+		const hit = items.find((i) => i.number === num && i.repository.owner === owner && i.repository.name === repo);
+		if (hit) {
+			this.plugin.cache.lastSeen[seenKey(kind, hit.id)] = Date.now();
+			this.plugin.saveCache();
+		}
+	}
+
+	getUnreadCount(): number {
+		let n = 0;
+		const p = this.pullsData;
+		if (p) {
+			for (const list of [p.reviewRequested, p.authored, p.assigned, p.mentioned, p.involved ?? []]) {
+				for (const pr of list) if (isUnread(this.plugin.cache, "pr", pr.id, pr.updatedAt)) n++;
+			}
+		}
+		const i = this.issuesData;
+		if (i) {
+			for (const list of [i.assigned, i.authored, i.mentioned]) {
+				for (const is of list) if (isUnread(this.plugin.cache, "issue", is.id, is.updatedAt)) n++;
+			}
+		}
+		return n;
+	}
+
+	markAllAsRead() {
+		const now = Date.now();
+		const p = this.pullsData;
+		if (p) {
+			for (const list of [p.reviewRequested, p.authored, p.assigned, p.mentioned, p.involved ?? []]) {
+				for (const pr of list) this.plugin.cache.lastSeen[seenKey("pr", pr.id)] = now;
+			}
+		}
+		const i = this.issuesData;
+		if (i) {
+			for (const list of [i.assigned, i.authored, i.mentioned]) {
+				for (const is of list) this.plugin.cache.lastSeen[seenKey("issue", is.id)] = now;
+			}
+		}
+		this.plugin.saveCache();
+		this.render();
 	}
 
 	renderReactions(parent: HTMLElement, comment: PullComment | IssueComment) {

@@ -87,7 +87,8 @@ export default class OctosidianPlugin extends Plugin {
 		const raw = await this.loadData();
 		if (raw) {
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, raw.settings ?? raw);
-			this.cache = raw.cache ?? emptyCacheData();
+			const loaded = raw.cache ?? emptyCacheData();
+			this.cache = { ...emptyCacheData(), ...loaded, lastSeen: loaded.lastSeen ?? {} };
 		}
 	}
 
