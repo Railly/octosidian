@@ -14,6 +14,7 @@ import type {
 	IssueComment,
 	TimelineEvent,
 	GroupedLabelEvent,
+	ReviewThread,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
@@ -1098,6 +1099,10 @@ export class OctosidianView extends ItemView {
 			}
 		}
 
+		if (data.reviewThreads && data.reviewThreads.length > 0) {
+			this.renderReviewThreads(content, data.reviewThreads);
+		}
+
 		this.renderTimeline(content, data.comments, data.events);
 
 		const commentForm = content.createDiv({ cls: "octo-comment-form" });
@@ -1646,6 +1651,100 @@ export class OctosidianView extends ItemView {
 		}
 		this.plugin.saveCache();
 		this.render();
+	}
+
+	renderReviewThreads(parent: HTMLElement, threads: ReviewThread[]) {
+		const totalReplies = threads.reduce((sum, t) => sum + t.replies.length, 0);
+		const fileMap = new Map<string, ReviewThread[]>();
+		for (const thread of threads) {
+			const arr = fileMap.get(thread.path) ?? [];
+			arr.push(thread);
+			fileMap.set(thread.path, arr);
+		}
+
+		const section = parent.createDiv({ cls: "octo-review-threads" });
+		section.createDiv({
+			cls: "octo-detail-section-title",
+			text: `Review Comments (${threads.length} thread${threads.length !== 1 ? "s" : ""}, ${totalReplies} ${totalReplies !== 1 ? "replies" : "reply"})`,
+		});
+
+		for (const [path, fileThreads] of fileMap) {
+			const fileGroup = section.createDiv({ cls: "octo-review-file-group" });
+			let fileExpanded = true;
+			const fileHeader = fileGroup.createDiv({ cls: "octo-review-file-header" });
+			const chevronEl = fileHeader.createSpan({ cls: "octo-review-file-chevron" });
+			chevronEl.innerHTML = ICONS.chevronDown;
+			const fileIconEl = fileHeader.createSpan({ cls: "octo-review-file-icon" });
+			fileIconEl.innerHTML = ICONS.file;
+			fileHeader.createSpan({ cls: "octo-review-file-path", text: path });
+			fileHeader.createSpan({ cls: "octo-review-file-count", text: String(fileThreads.length) });
+			const fileBody = fileGroup.createDiv({ cls: "octo-review-file-body" });
+			fileHeader.addEventListener("click", () => {
+				fileExpanded = !fileExpanded;
+				chevronEl.innerHTML = fileExpanded ? ICONS.chevronDown : ICONS.chevronRight;
+				fileBody.style.display = fileExpanded ? "" : "none";
+			});
+
+			for (const thread of fileThreads) {
+				const threadEl = fileBody.createDiv({
+					cls: `octo-review-thread${thread.isResolved ? " octo-review-resolved" : ""}`,
+				});
+				const threadHeader = threadEl.createDiv({ cls: "octo-review-thread-header" });
+				if (thread.isResolved) {
+					const resolvedPill = threadHeader.createSpan({ cls: "octo-review-resolved-pill" });
+					const resolvedIcon = resolvedPill.createSpan();
+					resolvedIcon.innerHTML = ICONS.checkCircle;
+					resolvedPill.createSpan({ text: "Resolved" });
+				}
+				const lineRef = thread.line !== null ? `:${thread.line}` : "";
+				threadHeader.createSpan({ cls: "octo-review-thread-location", text: `${thread.side === "LEFT" ? "L" : "R"}${lineRef}` });
+
+				let threadExpanded = !thread.isResolved;
+				const threadBody = threadEl.createDiv({ cls: "octo-review-thread-body" });
+				if (!threadExpanded) threadBody.style.display = "none";
+				if (thread.isResolved) {
+					threadHeader.addEventListener("click", () => {
+						threadExpanded = !threadExpanded;
+						threadBody.style.display = threadExpanded ? "" : "none";
+					});
+					threadHeader.style.cursor = "pointer";
+				}
+
+				if (thread.diffHunk) {
+					const hunkEl = threadBody.createDiv({ cls: "octo-review-hunk" });
+					const lines = thread.diffHunk.split("\n");
+					for (const line of lines) {
+						const lineEl = hunkEl.createDiv({ cls: "octo-review-hunk-line" });
+						if (line.startsWith("+")) lineEl.addClass("octo-review-hunk-add");
+						else if (line.startsWith("-")) lineEl.addClass("octo-review-hunk-del");
+						lineEl.createSpan({ text: line });
+					}
+				}
+
+				const rootCommentEl = threadBody.createDiv({ cls: "octo-comment" });
+				this.renderReviewCommentBody(rootCommentEl, thread.root, false);
+				for (const reply of thread.replies) {
+					const replyEl = threadBody.createDiv({ cls: "octo-comment" });
+					this.renderReviewCommentBody(replyEl, reply, true);
+				}
+			}
+		}
+	}
+
+	renderReviewCommentBody(commentEl: HTMLElement, comment: ReviewThread["root"], isReply: boolean) {
+		if (isReply) commentEl.addClass("octo-review-reply");
+		const commentHeader = commentEl.createDiv({ cls: "octo-comment-header" });
+		if (comment.author) {
+			const avatar = commentHeader.createEl("img", {
+				cls: "octo-comment-avatar",
+				attr: { src: comment.author.avatarUrl, alt: comment.author.login, width: "20", height: "20" },
+			});
+			avatar.addEventListener("error", () => avatar.remove());
+			commentHeader.createSpan({ cls: "octo-comment-author", text: comment.author.login });
+		}
+		commentHeader.createSpan({ cls: "octo-comment-time", text: this.timeAgo(comment.createdAt) });
+		const commentBody = commentEl.createDiv({ cls: "octo-comment-body" });
+		MarkdownRenderer.render(this.app, comment.body, commentBody, "", this);
 	}
 
 	renderTimeline(parent: HTMLElement, comments: PullComment[] | IssueComment[], events: TimelineEvent[]) {

@@ -158,10 +158,35 @@ export type GroupedLabelEvent = {
 	removed: Array<{ name: string; color: string }>;
 };
 
+export type ReviewComment = {
+	id: number;
+	inReplyToId: number | null;
+	path: string;
+	line: number | null;
+	originalLine: number | null;
+	side: "LEFT" | "RIGHT";
+	diffHunk: string;
+	body: string;
+	createdAt: string;
+	author: GitHubActor | null;
+};
+
+export type ReviewThread = {
+	id: number;
+	path: string;
+	line: number | null;
+	side: "LEFT" | "RIGHT";
+	diffHunk: string;
+	isResolved: boolean;
+	root: ReviewComment;
+	replies: ReviewComment[];
+};
+
 export type PullPageData = {
 	detail: PullDetail | null;
 	comments: PullComment[];
 	events: TimelineEvent[];
+	reviewThreads?: ReviewThread[];
 };
 
 export type IssuePageData = {

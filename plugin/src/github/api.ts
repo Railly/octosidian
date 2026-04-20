@@ -16,6 +16,8 @@ import type {
 	TimelineEvent,
 	GitHubNotification,
 	CommentReactions,
+	ReviewComment,
+	ReviewThread,
 } from "./types";
 
 function requireClient() {
@@ -296,7 +298,56 @@ export async function getPullPageData(
 		stateReason: e.state_reason ?? null,
 	}));
 
-	return { detail, comments, events };
+	let reviewCommentsRes: { data: any[] } = { data: [] };
+	try {
+		reviewCommentsRes = await client.rest.pulls.listReviewComments({
+			owner, repo, pull_number: pullNumber, per_page: 100,
+		});
+	} catch { /* 403 fallback */ }
+
+	const rawReviewComments: ReviewComment[] = reviewCommentsRes.data.map((c) => ({
+		id: c.id,
+		inReplyToId: c.in_reply_to_id ?? null,
+		path: c.path,
+		line: c.line ?? null,
+		originalLine: c.original_line ?? null,
+		side: (c.side === "LEFT" ? "LEFT" : "RIGHT") as "LEFT" | "RIGHT",
+		diffHunk: c.diff_hunk ?? "",
+		body: c.body ?? "",
+		createdAt: c.created_at,
+		author: mapActor(c.user as any),
+	}));
+
+	const reviewThreads = buildReviewThreads(rawReviewComments);
+
+	return { detail, comments, events, reviewThreads };
+}
+
+function buildReviewThreads(comments: ReviewComment[]): ReviewThread[] {
+	const roots = comments.filter((c) => c.inReplyToId === null);
+	const replyMap = new Map<number, ReviewComment[]>();
+	for (const c of comments) {
+		if (c.inReplyToId !== null) {
+			const arr = replyMap.get(c.inReplyToId) ?? [];
+			arr.push(c);
+			replyMap.set(c.inReplyToId, arr);
+		}
+	}
+	return roots.map((root) => {
+		const replies = (replyMap.get(root.id) ?? []).sort(
+			(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+		);
+		return {
+			id: root.id,
+			path: root.path,
+			line: root.line ?? root.originalLine,
+			side: root.side,
+			diffHunk: root.diffHunk,
+			isResolved: false, // TODO: REST API does not expose thread resolution; GraphQL reviewThreads.isResolved would provide it
+			root,
+			replies,
+		};
+	});
 }
 
 export async function getIssuePageData(
