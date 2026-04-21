@@ -2254,3 +2254,18 @@
 .octo-repo-owner-inline {
 	cursor: pointer;
 }
+
+/* --- Chunked load (IntersectionObserver sentinel) --- */
+
+.octo-load-more-sentinel {
+	height: 1px;
+	width: 100%;
+}
+
+.octo-load-more-label {
+	font-size: 11px;
+	color: var(--text-faint);
+	padding: 8px 12px;
+	text-align: center;
+	font-style: italic;
+}
