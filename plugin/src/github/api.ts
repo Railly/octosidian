@@ -18,6 +18,8 @@ import type {
 	CommentReactions,
 	ReviewComment,
 	ReviewThread,
+	PullFile,
+	PullFilesPage,
 	Repository,
 	MyReposResult,
 	GitHubProfile,
@@ -439,6 +441,38 @@ export type CheckRun = {
 	conclusion: string | null;
 	appAvatarUrl: string | null;
 };
+
+export async function getPullFiles(
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	page = 1,
+	perPage = 30,
+): Promise<PullFilesPage> {
+	const client = requireClient();
+	try {
+		const res = await client.rest.pulls.listFiles({
+			owner,
+			repo,
+			pull_number: pullNumber,
+			page,
+			per_page: perPage,
+		});
+		const files: PullFile[] = res.data.map((f: any) => ({
+			sha: f.sha,
+			filename: f.filename,
+			previousFilename: f.previous_filename ?? null,
+			status: f.status as PullFile["status"],
+			additions: f.additions ?? 0,
+			deletions: f.deletions ?? 0,
+			changes: f.changes ?? 0,
+			patch: f.patch ?? null,
+		}));
+		return { files, page, hasMore: res.data.length >= perPage };
+	} catch {
+		return { files: [], page, hasMore: false };
+	}
+}
 
 export async function getPullChecks(owner: string, repo: string, ref: string): Promise<CheckRun[]> {
 	const client = requireClient();

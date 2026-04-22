@@ -182,6 +182,23 @@ export type ReviewThread = {
 	replies: ReviewComment[];
 };
 
+export type PullFile = {
+	sha: string;
+	filename: string;
+	previousFilename: string | null;
+	status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
+	additions: number;
+	deletions: number;
+	changes: number;
+	patch: string | null;
+};
+
+export type PullFilesPage = {
+	files: PullFile[];
+	page: number;
+	hasMore: boolean;
+};
+
 export type PullPageData = {
 	detail: PullDetail | null;
 	comments: PullComment[];
