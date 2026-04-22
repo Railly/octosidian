@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, WorkspaceLeaf, Notice } from "obsidian";
 import type OctosidianPlugin from "../main";
 import { getClient } from "../github/client";
-import { getMyPulls, getMyIssues, getMyRepos, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, getProfilePageData, type CheckRun } from "../github/api";
+import { getMyPulls, getMyIssues, getMyRepos, getNotifications, getPullPageData, getIssuePageData, createComment, updatePullState, updateIssueState, mergePullRequest, getPullChecks, getPullFiles, markNotificationRead, markAllNotificationsRead, getRepoOverview, getRepoTree, getRepoReadme, getRepoPulls, getRepoIssues, getFileContent, getViewerPermission, getProfilePageData, type CheckRun } from "../github/api";
 import type {
 	MyPullsResult,
 	MyIssuesResult,
@@ -17,11 +17,14 @@ import type {
 	TimelineEvent,
 	GroupedLabelEvent,
 	ReviewThread,
+	PullFile,
 	ProfilePageData,
 } from "../github/types";
 import { ICONS, prStateIcon } from "../icons";
 import { textColorFor } from "../lib/contrast";
 import { isUnread, seenKey, type OpenDetailTab } from "../cache";
+import { parsePatch, detectLanguage } from "../lib/diff-parser";
+import { highlightLine } from "../lib/highlight";
 
 function labelAttrs(color: string): { style: string } {
 	const textColor = textColorFor(color) === "dark" ? "#000000" : "#ffffff";
@@ -249,6 +252,12 @@ export class OctosidianView extends ItemView {
 	}
 
 	prChecks: CheckRun[] = [];
+	prFiles: PullFile[] = [];
+	prFilesPage = 0;
+	prFilesHasMore = false;
+	prFilesLoading = false;
+	prFilesActivePath: string | null = null; // which file is scrolled-to / highlighted in tree
+	prFilesCollapsed: Set<string> = new Set();
 
 	async openPrDetail(owner: string, repo: string, num: number) {
 		this.markSeenByNumber("pr", owner, repo, num);
@@ -262,6 +271,11 @@ export class OctosidianView extends ItemView {
 			owner, repo, number: num,
 		});
 		this.detail = { type: "pr", owner, repo, number: num, data: null, loading: true };
+		this.prFiles = [];
+		this.prFilesPage = 0;
+		this.prFilesHasMore = false;
+		this.prFilesActivePath = null;
+		this.prFilesCollapsed.clear();
 		this.render();
 		try {
 			const repoKey = `${owner}/${repo}`;
@@ -269,12 +283,16 @@ export class OctosidianView extends ItemView {
 			const permPromise = viewerLogin && !this.viewerPermission[repoKey]
 				? getViewerPermission(owner, repo, viewerLogin).then((p) => { this.viewerPermission[repoKey] = p; })
 				: Promise.resolve();
-			const [data] = await Promise.all([getPullPageData(owner, repo, num), permPromise]);
+			const filesPromise = getPullFiles(owner, repo, num, 1);
+			const [data, filesPage] = await Promise.all([getPullPageData(owner, repo, num), filesPromise, permPromise]);
 			if (data?.detail?.headSha) {
 				this.prChecks = await getPullChecks(owner, repo, data.detail.headSha);
 			} else {
 				this.prChecks = [];
 			}
+			this.prFiles = filesPage.files;
+			this.prFilesPage = filesPage.page;
+			this.prFilesHasMore = filesPage.hasMore;
 			if (this.detail?.type === "pr" && this.detail.number === num) {
 				this.detail = { ...this.detail, data, loading: false };
 				this.render();
@@ -282,6 +300,22 @@ export class OctosidianView extends ItemView {
 		} catch {
 			new Notice("Octosidian: Failed to load PR details");
 			this.detail = null;
+			this.render();
+		}
+	}
+
+	async loadMorePrFiles() {
+		if (!this.prFilesHasMore || this.prFilesLoading) return;
+		const d = this.detail;
+		if (d?.type !== "pr") return;
+		this.prFilesLoading = true;
+		try {
+			const next = await getPullFiles(d.owner, d.repo, d.number, this.prFilesPage + 1);
+			this.prFiles = [...this.prFiles, ...next.files];
+			this.prFilesPage = next.page;
+			this.prFilesHasMore = next.hasMore;
+		} finally {
+			this.prFilesLoading = false;
 			this.render();
 		}
 	}
@@ -1195,6 +1229,10 @@ export class OctosidianView extends ItemView {
 				row.createSpan({ text: check.name });
 				if (check.conclusion) row.createSpan({ cls: "octo-check-conclusion", text: check.conclusion });
 			}
+		}
+
+		if (this.prFiles.length > 0) {
+			this.renderPrFilesSection(content, pr.changedFiles);
 		}
 
 		if (data.reviewThreads && data.reviewThreads.length > 0) {
@@ -2112,6 +2150,175 @@ export class OctosidianView extends ItemView {
 					}
 				}
 			}
+	}
+
+	// --- PR Files / Diff view ---
+
+	renderPrFilesSection(parent: HTMLElement, totalFiles: number) {
+		const section = parent.createDiv({ cls: "octo-pr-files" });
+		const header = section.createDiv({ cls: "octo-pr-files-header" });
+		header.createDiv({
+			cls: "octo-detail-section-title",
+			text: `Files changed (${this.prFiles.length}${this.prFiles.length < totalFiles ? ` of ${totalFiles}` : ""})`,
+		});
+
+		const layout = section.createDiv({ cls: "octo-pr-files-layout" });
+		const treeSide = layout.createDiv({ cls: "octo-pr-files-tree-side" });
+		const diffSide = layout.createDiv({ cls: "octo-pr-files-diff-side" });
+
+		this.renderPrFileTree(treeSide);
+
+		const INITIAL = 10;
+		const CHUNK = 10;
+		let shown = 0;
+		const renderDiffsUpTo = (limit: number) => {
+			const end = Math.min(limit, this.prFiles.length);
+			for (let i = shown; i < end; i++) {
+				this.renderPrFileDiff(diffSide, this.prFiles[i]);
+			}
+			shown = end;
+		};
+		renderDiffsUpTo(INITIAL);
+
+		if (this.prFiles.length > INITIAL || this.prFilesHasMore) {
+			const sentinel = diffSide.createDiv({ cls: "octo-load-more-sentinel" });
+			const label = diffSide.createDiv({ cls: "octo-load-more-label" });
+			const updateLabel = () => {
+				const leftLocal = this.prFiles.length - shown;
+				if (leftLocal > 0) {
+					label.textContent = `${leftLocal} more file${leftLocal !== 1 ? "s" : ""} rendered below...`;
+				} else if (this.prFilesHasMore) {
+					label.textContent = this.prFilesLoading ? "Loading more files from GitHub..." : "Scroll for more files...";
+				} else {
+					label.remove();
+					observer.disconnect();
+				}
+			};
+			updateLabel();
+
+			const observer = new IntersectionObserver((entries) => {
+				for (const e of entries) {
+					if (!e.isIntersecting) continue;
+					if (shown < this.prFiles.length) {
+						renderDiffsUpTo(shown + CHUNK);
+						updateLabel();
+					} else if (this.prFilesHasMore && !this.prFilesLoading) {
+						this.loadMorePrFiles();
+					}
+				}
+			}, { rootMargin: "600px" });
+			observer.observe(sentinel);
+		}
+	}
+
+	renderPrFileTree(parent: HTMLElement) {
+		const treeHeader = parent.createDiv({ cls: "octo-pr-tree-header" });
+		treeHeader.createSpan({ text: "Files" });
+
+		const list = parent.createDiv({ cls: "octo-pr-tree-list" });
+		// Simple flat list (one entry per file). Group by top-level folder using a
+		// collapsible-less approach — stacks prevent complex tree state and scale
+		// better than nested folders for most PR sizes.
+		for (const file of this.prFiles) {
+			const row = list.createDiv({
+				cls: `octo-pr-tree-row${this.prFilesActivePath === file.filename ? " octo-pr-tree-active" : ""}`,
+			});
+			const statusDot = row.createSpan({ cls: `octo-pr-tree-status octo-pr-status-${file.status}` });
+			statusDot.textContent = this.statusGlyph(file.status);
+			row.createSpan({ cls: "octo-pr-tree-path", text: file.filename, attr: { title: file.filename } });
+			row.createSpan({
+				cls: "octo-pr-tree-changes",
+				text: `+${file.additions} −${file.deletions}`,
+			});
+			row.addEventListener("click", () => {
+				this.prFilesActivePath = file.filename;
+				// Scroll to the diff block for this file (created via renderPrFileDiff).
+				const escaped = file.filename.replace(/"/g, '\\"');
+				const target = this.containerEl.querySelector(`.octo-pr-file-diff[data-file="${escaped}"]`);
+				if (target) {
+					(target as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+				}
+				this.render();
+			});
+		}
+	}
+
+	statusGlyph(status: PullFile["status"]): string {
+		switch (status) {
+			case "added": return "A";
+			case "removed": return "D";
+			case "renamed": return "R";
+			case "copied": return "C";
+			case "modified":
+			case "changed":
+			case "unchanged":
+			default: return "M";
+		}
+	}
+
+	renderPrFileDiff(parent: HTMLElement, file: PullFile) {
+		const block = parent.createDiv({ cls: "octo-pr-file-diff" });
+		block.dataset.file = file.filename;
+
+		const collapsed = this.prFilesCollapsed.has(file.filename);
+		const header = block.createDiv({ cls: "octo-pr-file-diff-header" });
+		const chevron = header.createSpan({ cls: "octo-pr-file-diff-chevron" });
+		chevron.innerHTML = collapsed ? ICONS.chevronRight : ICONS.chevronDown;
+		const statusDot = header.createSpan({ cls: `octo-pr-file-diff-status octo-pr-status-${file.status}`, text: this.statusGlyph(file.status) });
+		const nameWrap = header.createSpan({ cls: "octo-pr-file-diff-name" });
+		if (file.previousFilename && file.previousFilename !== file.filename) {
+			nameWrap.createSpan({ cls: "octo-pr-file-diff-prev", text: file.previousFilename });
+			nameWrap.createSpan({ text: " → " });
+		}
+		nameWrap.createSpan({ text: file.filename });
+		const stats = header.createSpan({ cls: "octo-pr-file-diff-stats" });
+		stats.createSpan({ cls: "octo-pr-file-diff-add", text: `+${file.additions}` });
+		stats.createSpan({ cls: "octo-pr-file-diff-del", text: `−${file.deletions}` });
+		header.addEventListener("click", () => {
+			if (this.prFilesCollapsed.has(file.filename)) {
+				this.prFilesCollapsed.delete(file.filename);
+			} else {
+				this.prFilesCollapsed.add(file.filename);
+			}
+			this.render();
+		});
+		void statusDot;
+
+		if (collapsed) return;
+
+		if (!file.patch) {
+			const empty = block.createDiv({ cls: "octo-pr-file-diff-empty" });
+			if (file.status === "removed") empty.textContent = "File removed.";
+			else if (file.changes === 0) empty.textContent = "File renamed without changes.";
+			else empty.textContent = "Diff unavailable (binary or exceeds GitHub patch limit).";
+			return;
+		}
+
+		const hunks = parsePatch(file.patch);
+		const lang = detectLanguage(file.filename);
+		const body = block.createDiv({ cls: "octo-pr-file-diff-body" });
+
+		for (const hunk of hunks) {
+			const hunkEl = body.createDiv({ cls: "octo-pr-hunk" });
+			for (const line of hunk.lines) {
+				const lineEl = hunkEl.createDiv({ cls: `octo-pr-diff-line octo-pr-diff-${line.kind}` });
+				const oldNo = lineEl.createSpan({ cls: "octo-pr-diff-lineno" });
+				oldNo.textContent = line.oldLineNumber != null ? String(line.oldLineNumber) : "";
+				const newNo = lineEl.createSpan({ cls: "octo-pr-diff-lineno" });
+				newNo.textContent = line.newLineNumber != null ? String(line.newLineNumber) : "";
+				const sign = lineEl.createSpan({ cls: "octo-pr-diff-sign" });
+				if (line.kind === "add") sign.textContent = "+";
+				else if (line.kind === "del") sign.textContent = "−";
+				else if (line.kind === "hunk-header") sign.textContent = "";
+				else sign.textContent = " ";
+				const content = lineEl.createSpan({ cls: "octo-pr-diff-content" });
+				if (line.kind === "hunk-header") {
+					content.textContent = line.content;
+				} else {
+					content.innerHTML = highlightLine(line.content, lang);
+				}
+			}
+		}
 	}
 
 	renderReactions(parent: HTMLElement, comment: PullComment | IssueComment) {

@@ -2269,3 +2269,237 @@
 	text-align: center;
 	font-style: italic;
 }
+
+/* --- PR Files / Diff View --- */
+
+.octo-pr-files {
+	margin: 24px 0;
+}
+
+.octo-pr-files-header {
+	margin-bottom: 12px;
+}
+
+.octo-pr-files-layout {
+	display: grid;
+	grid-template-columns: 220px minmax(0, 1fr);
+	gap: 16px;
+	align-items: start;
+}
+
+.octo-pr-files-tree-side {
+	position: sticky;
+	top: 120px;
+	max-height: calc(100vh - 180px);
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.octo-pr-tree-header {
+	padding: 8px 12px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.octo-pr-tree-list {
+	display: flex;
+	flex-direction: column;
+	padding: 4px 0;
+}
+
+.octo-pr-tree-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 10px;
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	cursor: pointer;
+	color: var(--text-normal);
+	transition: background 80ms;
+	min-width: 0;
+}
+
+.octo-pr-tree-row:hover { background: var(--background-modifier-hover); }
+.octo-pr-tree-active { background: var(--background-modifier-hover); color: var(--interactive-accent); }
+
+.octo-pr-tree-status {
+	display: inline-flex;
+	justify-content: center;
+	width: 14px;
+	font-size: 9px;
+	font-weight: 700;
+	border-radius: 3px;
+	padding: 1px 0;
+	flex-shrink: 0;
+}
+
+.octo-pr-status-added    { background: color-mix(in srgb, #3fb950 20%, transparent); color: #3fb950; }
+.octo-pr-status-removed  { background: color-mix(in srgb, #f85149 20%, transparent); color: #f85149; }
+.octo-pr-status-modified { background: color-mix(in srgb, #d29922 20%, transparent); color: #d29922; }
+.octo-pr-status-changed  { background: color-mix(in srgb, #d29922 20%, transparent); color: #d29922; }
+.octo-pr-status-renamed  { background: color-mix(in srgb, #58a6ff 20%, transparent); color: #58a6ff; }
+.octo-pr-status-copied   { background: color-mix(in srgb, #58a6ff 20%, transparent); color: #58a6ff; }
+.octo-pr-status-unchanged { background: var(--background-modifier-border); color: var(--text-muted); }
+
+.octo-pr-tree-path {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl;
+	text-align: left;
+}
+
+.octo-pr-tree-changes {
+	font-size: 10px;
+	color: var(--text-faint);
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.octo-pr-files-diff-side {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-width: 0;
+}
+
+.octo-pr-file-diff {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	overflow: hidden;
+}
+
+.octo-pr-file-diff-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 12px;
+	background: var(--background-secondary);
+	cursor: pointer;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-family: var(--font-monospace);
+	font-size: 12px;
+}
+
+.octo-pr-file-diff-header:hover { background: var(--background-modifier-hover); }
+
+.octo-pr-file-diff-chevron {
+	display: flex;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.octo-pr-file-diff-chevron svg { width: 12px; height: 12px; }
+
+.octo-pr-file-diff-status {
+	display: inline-flex;
+	justify-content: center;
+	width: 16px;
+	font-size: 10px;
+	font-weight: 700;
+	border-radius: 3px;
+	padding: 1px 0;
+	flex-shrink: 0;
+}
+
+.octo-pr-file-diff-name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+	font-weight: 500;
+}
+
+.octo-pr-file-diff-prev {
+	color: var(--text-faint);
+	text-decoration: line-through;
+}
+
+.octo-pr-file-diff-stats {
+	display: inline-flex;
+	gap: 8px;
+	font-variant-numeric: tabular-nums;
+	font-size: 11px;
+	flex-shrink: 0;
+}
+
+.octo-pr-file-diff-add { color: #3fb950; }
+.octo-pr-file-diff-del { color: #f85149; }
+
+.octo-pr-file-diff-empty {
+	padding: 16px;
+	color: var(--text-muted);
+	font-size: 12px;
+	font-style: italic;
+	text-align: center;
+}
+
+.octo-pr-file-diff-body {
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-x: auto;
+}
+
+.octo-pr-hunk:not(:first-child) {
+	border-top: 1px dashed var(--background-modifier-border);
+}
+
+.octo-pr-diff-line {
+	display: grid;
+	grid-template-columns: 48px 48px 14px 1fr;
+	align-items: baseline;
+	min-width: 0;
+}
+
+.octo-pr-diff-add { background: rgba(46, 160, 67, 0.12); }
+.octo-pr-diff-del { background: rgba(248, 81, 73, 0.12); }
+.octo-pr-diff-hunk-header {
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.octo-pr-diff-lineno {
+	color: var(--text-faint);
+	padding: 0 6px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	user-select: none;
+}
+
+.octo-pr-diff-sign {
+	text-align: center;
+	font-weight: 600;
+	user-select: none;
+}
+
+.octo-pr-diff-add .octo-pr-diff-sign { color: #3fb950; }
+.octo-pr-diff-del .octo-pr-diff-sign { color: #f85149; }
+
+.octo-pr-diff-content {
+	padding-left: 6px;
+	white-space: pre;
+	overflow-x: auto;
+}
+
+/* --- Syntax highlight tokens --- */
+
+.octo-hl-comment { color: var(--text-faint); font-style: italic; }
+.octo-hl-string  { color: #a5d6ff; }
+.octo-hl-keyword { color: #ff7b72; font-weight: 500; }
+.octo-hl-number  { color: #79c0ff; }
+
+.theme-light .octo-hl-string  { color: #0a3069; }
+.theme-light .octo-hl-keyword { color: #cf222e; }
+.theme-light .octo-hl-number  { color: #0550ae; }
